@@ -3,23 +3,23 @@
 
 
 // Test Variables
-#define MANUAL      // Comment to cancel manual mode
-#define TESTING     // Comment to cancel testing 
+#define MANUAL                // Comment to cancel manual mode
+#define TESTING               // Comment to cancel testing 
+
 
 // Pin Connections
-#define STEP 9      // PWM signal for motor
-#define DIR 6       // Direction of motor
-#define STBY 2      // Controller's standby enable (both EN and STBY must be low for low power mode)
-#define M1 7        // microstep config bit 1
-#define M2 8        // microstep config bit 2
+#define STEP 9                // PWM signal for motor
+#define DIR 6                 // Direction of motor
+#define STBY 2                // Controller's standby enable (both EN and STBY must be low for low power mode)
+#define M1 7                  // microstep config bit 1
+#define M2 8                  // microstep config bit 2
 // NOTE : STEP, DIR, M2, M1 are all used to set the microstep in the init latching 
-//         but only STEP and DIR are availible after init
-
+//        but only STEP and DIR are availible after init
 
 
 // Common States
-#define FORWARD LOW    // motor direction
-#define REVERSE HIGH     // motor direction
+#define FORWARD LOW           // motor direction
+#define REVERSE HIGH          // motor direction
 
 
 // Microstep settings  [ M1, M2, STEP, DIR ]
@@ -32,61 +32,62 @@
 #define S_64    0xD
 #define S_128   0x8
 #define S_256   0x6
+char step_config = S_FULL;          // Set default to full step
 
 
 // Pulse/Freq Variables
 #define DutyCycle  0.5 * 1024
-#define MTR_FREQ_MAX 20000          // Max freq motor can handle [Hz]
-#define MTR_FREQ_MIN 1              // Min freq " 
+#define MTR_FREQ_MAX 681            // Max freq motor can handle [Hz]
+#define MTR_FREQ_MIN 120            // Min freq " 
 
 
 // Physical Variables
 #define INTERNAL_STEP 200           // Internal step size of the motor
-#define GEAR_RATIO  99.05             // gear ratio of the planetary gear
+#define GEAR_RATIO  99.05           // gear ratio of the planetary gear
 #define THREAD_PITCH  0.005         // thread pitch of the actuator's screw [m]
-float syr_radius = 0.010845;           //RADIUS of the 30ml BD syringe [m]
-float q_user = 0.001;               // volumetric flow rate as requested by user [L/s]
-float period = 0.01;        // [sec/step]
-
-
+float syr_radius = 0.010845;        //RADIUS of the 30ml BD syringe [m]
+float q_user = 0.00001;             // volumetric flow rate as requested by user [L/s]
+float freq = 200;                   // [sec/step]
 
 
 void setup() {
 
-  Serial.begin(9600);               // Serial comms init
+  Serial.begin(9600);                           // Serial comms init
 
   //I2C comms setup
 
-  pinMode(STEP, OUTPUT);            // Setup controller pins
+  pinMode(STEP, OUTPUT);                        // Setup controller pins
   pinMode(DIR, OUTPUT);
   pinMode(STBY, OUTPUT);
   pinMode(M1, OUTPUT);
   pinMode(M2, OUTPUT);
-
-  char step_config = S_FULL;        // Set default to full step
-  init_control(step_config);        // init controller
-
-    #ifdef MANUAL
-    //q_user = 0.00000006944444444;                 // Manually set the Q from code  0.00000006944444444
-    q_user = 0.0000105;
-    #endif
-
-  period = Q_to_Period(q_user, syr_radius);     // Get period from Q
-
-    #ifdef TESTING
-    Serial.println(1/period,8);
-    #endif
-    
   digitalWrite(DIR, REVERSE);                   // Direction of motor
-  Timer1.initialize(period * 1000000);          // Init custom PWM freq[microsec] (mult to conv to usec)
-  Timer1.pwm(STEP, DutyCycle);                  // Pulse the motor 
+
+  
+  init_control(step_config);                    // init controller
+  delay(10);
+
+      #ifdef MANUAL
+      //q_user = 0.00000006944444444;             // Manually set the Q from code 
+      q_user = 0.00001;
+      #endif
+
+  freq =  Q_to_Freq(q_user, syr_radius);     // Get period from Q
+
+      #ifdef TESTING
+      Serial.println(freq,8);
+      #endif
+    
+  
+  Timer1.initialize((1/freq) * 1000000);          // Init custom PWM freq[microsec] (mult to conv to usec)
+
+      #ifdef MANUAL
+      Timer1.pwm(STEP, DutyCycle);                  // Pulse the motor 
+      #endif
     
 }
 
 void loop() {
-
- 
-
 }
 
 
@@ -127,13 +128,103 @@ void init_control(char pin_config) {
 
 
 
-/*~~~~~~~~~~~~~~~~~~~~~~~ Q_to_Period() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/*~~~~~~~~~~~~~~~~~~~~~~~ Q_to_Freq() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  *  Purpose : Convert the requested Q rate into a frequency for the stepper motor 
  *  Input : q_user, syr_radius, Physical quantities
- *  Outut : period 
+ *  Outut : freq 
  */
-float Q_to_Period( float Q, float Radius){
+float Q_to_Freq( float Q, float Radius){
   
-  float period = (500 * Radius * Radius * THREAD_PITCH) /  ( Q * INTERNAL_STEP * GEAR_RATIO) ;
-  return period;
+  float freq = ( Q * INTERNAL_STEP * GEAR_RATIO) / (500 * Radius * Radius * THREAD_PITCH);
+  return freq;
+}
+
+
+
+
+
+
+/*~~~~~~~~~~~~~~~~~~~~~~~~ MicroCali() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ *  Purpose : Recalibrate the md39a motor controller's microstep setting to accomidate the min freq recommendation
+ *            Max freq will result in Full step at max freq + warning
+ *  Input : frequency, [global] step_config, [global] MTR_FREQ_MAX, [global] MTR_FREQ_MIN
+ *  Output : frequency, [global] step_config
+ *  Notes : Removes decimal point to save memory
+ */
+double MicroCali( float frequency ){
+
+
+  // If greater than the max frequency
+  if ( frequency > MTR_FREQ_MAX){
+    step_config = S_FULL;                                                 // Set controller to full step
+
+        #ifdef MANUAL
+        Serial.println(" Requested Q value exceeds hardware's MAX RPS");  // Inform user
+        #endif
+        
+    return MTR_FREQ_MAX;                                                  // Set freq to max
+  }
+
+  // Or if less than the min freq
+  else if (frequency < MTR_FREQ_MIN){
+    
+    double microstep = MTR_FREQ_MIN / frequency;                 // Microstep size 
+    
+    if ( microstep <= 2 ){                                                // Half step
+      step_config = S_HALF;                                               // Set controller to half step
+      return 2 * frequency;                                               // double freq
+    }
+
+    else if ( microstep <= 4 ){
+      step_config = S_QRTR;                                               // Set controller to half step
+      return 4 * frequency;                                               // double freq
+    }
+
+    else if ( microstep <= 8 ){
+      step_config = S_8;                                               
+      return 8 * frequency;                                               
+    }
+
+    else if ( microstep <= 16 ){
+      step_config = S_16;                                               
+      return 16 * frequency;                                               
+    }
+
+    else if ( microstep <= 32 ){
+      step_config = S_32;                                               
+      return 32 * frequency;                                               
+    }
+
+    else if ( microstep <= 64 ){
+      step_config = S_64;                                               
+      return 64 * frequency;                                               
+    }
+
+    else if ( microstep <= 128 ){
+      step_config = S_128;                                              
+      return 128 * frequency;                                              
+    }
+
+    else if ( microstep <= 256 ){
+      step_config = S_256;                                              
+      return 256 * frequency;                                             
+    }
+
+    else{
+      step_config = S_256;                                                 // Set controller to smallest step
+
+        #ifdef MANUAL
+        Serial.println(" Requested Q value is below hardware's MIN RPS");  // Inform user
+        #endif
+        
+    return MTR_FREQ_MIN;                                                  // Set freq to min
+      
+    }
+ }
+
+ // No microstepping change needed
+ else{
+  return frequency;
+ }
+   
 }
