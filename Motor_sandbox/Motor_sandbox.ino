@@ -1,11 +1,21 @@
-#include <TimerOne.h>
-#include <Wire.h>
+#include <TimerOne.h>         // Custom PWM freq
+#include <Wire.h>             // I2C 
 
 
 // Test Variables
 #define MANUAL                // Comment to cancel manual mode
-#define TESTING               // Comment to cancel testing 
+#define TESTING               // Comment to cancel testing
+#define SERIAL_COMMS          // Comment to cancel serial comms
+#define I2C_COMMS             // Comment to cancel I2C comms
 
+
+// State machine 
+enum State_enum {STANDBY, DATAPULL, CALC, RUN_S, RUN_J, STOP};           // States of the state machine
+enum Signal_enum {ESTOP, START, JOG, BACK};                     // signals for traversing 
+unsigned int state = STANDBY;                                   // default state 
+bool TICKET = false;                                            // Confirmation to run the motor after data RX
+bool FINISH = false;                                            // User def duration has been reached
+ 
 
 // Pin Connections
 #define STEP 9                // PWM signal for motor
@@ -36,7 +46,7 @@ char step_config = S_FULL;          // Set default to full step
 
 
 // Pulse/Freq Variables
-#define DutyCycle  0.5 * 1024
+#define DC  0.5 * 1024              // Duty Cycle of PWM
 #define MTR_FREQ_MAX 681            // Max freq motor can handle [Hz]
 #define MTR_FREQ_MIN 120            // Min freq " 
 
@@ -45,9 +55,16 @@ char step_config = S_FULL;          // Set default to full step
 #define INTERNAL_STEP 200           // Internal step size of the motor
 #define GEAR_RATIO  99.05           // gear ratio of the planetary gear
 #define THREAD_PITCH  0.005         // thread pitch of the actuator's screw [m]
-float syr_radius = 0.010845;        //RADIUS of the 30ml BD syringe [m]
+float syr_radius_user = 0.010845;   // RADIUS of the 30ml BD syringe [m]
 float q_user = 0.00001;             // volumetric flow rate as requested by user [L/s]
 float freq = 200;                   // [sec/step]
+unsigned int sec_user = 0;          // User requested sec duration
+unsigned int min_user = 0;          // User requested min duration
+unsigned int hour_user = 0;         // User "         hour "
+
+
+
+
 
 
 void setup() {
@@ -72,7 +89,7 @@ void setup() {
       q_user = 0.00001;
       #endif
 
-  freq =  Q_to_Freq(q_user, syr_radius);     // Get period from Q
+  freq =  Q_to_Freq(q_user, syr_radius_user);     // Get period from Q
 
       #ifdef TESTING
       Serial.println(freq,8);
@@ -82,7 +99,7 @@ void setup() {
   Timer1.initialize((1/freq) * 1000000);          // Init custom PWM freq[microsec] (mult to conv to usec)
 
       #ifdef MANUAL
-      Timer1.pwm(STEP, DutyCycle);                  // Pulse the motor 
+      Timer1.pwm(STEP, DC);                  // Pulse the motor 
       #endif
     
 }
@@ -138,7 +155,6 @@ float Q_to_Freq( float Q, float Radius){
   float freq = ( Q * INTERNAL_STEP * GEAR_RATIO) / (500 * Radius * Radius * THREAD_PITCH);
   return freq;
 }
-
 
 
 
@@ -228,3 +244,50 @@ double MicroCali( float frequency ){
  }
    
 }
+
+
+
+
+/* ~~~~~~~~~~~~~~~~~~~~~~~~ state_machine() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ *  Purpose : Control the flow of the motor controller 
+ *  Input : User input signals
+ *  Output : 
+ */
+
+ void state_machine(uint8_t signals){
+  
+  switch(state){
+    
+    case STANDBY:
+        
+        // Serial GUI
+
+        // read serial/I2C
+
+        //logic placement
+        
+        break;
+
+    case DATAPULL:
+        break;
+
+    case CALC:
+        break;
+
+    case RUN_J:
+        break;
+
+
+    case RUN_S:
+        break;
+
+    case STOP:
+        break;
+
+    default:
+        state = STOP;
+        break;
+
+    
+  }
+ }
