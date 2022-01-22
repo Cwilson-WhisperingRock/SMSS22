@@ -15,32 +15,31 @@ def main(stdscr):  # stdscr is standard output screen( draw screen, overlay scre
     RED_AND_WHITE = curses.color_pair(2)
     BLACK_AND_GREEN = curses.color_pair(3)
     
-    # Window creation :
-    # Window : create smaller windows to control small portions
-    # pad : show a certain amount of text at a time
-    # place window on screen(terminal for this ex) and work in that
-    # curses.newwin(height, char long, row, col)
-    counter_win = curses.newwin(1, 20, 0, 18)
     
-    # static string that isnt bothered by the window
-    stdscr.addstr("Device input : ", BLUE_AND_YELLOW)
+    # pad : show a certain amount of text at a time, overflow is possible
+    # can show only portions of the pad and trim the other
+    # place window on screen(terminal for this ex) and work in that
+    #     curse.newpad(curser row, curser col, length, width)
+    
+    pad = curses.newpad(100, 100)
     stdscr.refresh()
     
-    # changing color loop
     for i in range(100):
-        # stdscr.clear()                      # needed bc curser wont reset to home r,c
-        counter_win.clear()                   # windowing needs clear bc the window position is static 
-        color = RED_AND_WHITE
+        for j in range(26):
+            char = chr(65+j)
+            pad.addstr(char, BLACK_AND_GREEN) # adds to curser bc row/col isnt specified
 
-        if i % 2 == 0:
-            color = BLACK_AND_GREEN
+            
+    # (start pad row, start pad col, start window row, start window col, end window row, end window col) 
+    # pad.refresh(0,0,5,5,25,7)
 
-        # stdscr.addstr(f"Counter {i} ", color)
-        counter_win.addstr(f"Counter {i} ", color)
-        # stdscr.refresh()
-        counter_win.refresh()
-        time.sleep(0.1)                       #delay by 0.2 sec
-
+    # scrolling pads
+    for i in range(50):
+        stdscr.clear()
+        stdscr.refresh()
+        pad.refresh(0,0, 5, 5+i, 25, 25+i)
+        time.sleep(0.2)
+    
     # screen waits and gets char typed by user
     stdscr.getch()                      
 
