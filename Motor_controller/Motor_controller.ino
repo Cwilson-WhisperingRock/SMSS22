@@ -4,7 +4,7 @@
 
 // Test Variables
 #define MANUAL                // Comment to cancel manual mode
-//#define TESTING               // Comment to cancel testing
+#define TESTING               // Comment to cancel testing
 #define SERIAL_COMMS          // Comment to cancel serial comms
 //#define I2C_COMMS             // Comment to cancel I2C comms
 
@@ -29,6 +29,14 @@ bool FINISH = false;
 #define M2 8                  // microstep config bit 2
 // NOTE : STEP, DIR, M2, M1 are all used to set the microstep in the init latching 
 //        but only STEP and DIR are availible after init
+
+
+// LED State Indicators
+#define YELLOW 3
+#define GREEN 4
+#define RED 5
+#define WHITE 10 
+#define BLUE 11
 
 
 // Motor States
@@ -66,7 +74,7 @@ float q_user = 0;                           // volumetric flow rate as requested
 float freq = 200;                           // [sec/step]
 unsigned int sec_user = 0;                  // User requested sec duration
 unsigned int min_user = 0;                  // User requested min duration
-unsigned int hour_user = 0;                 // User "         hour "
+unsigned long hour_user = 0;                 // User "         hour "
 unsigned long duration = 0;                 // Run time {msec}
 unsigned long time_stamp_start = 0;          
 unsigned long time_stamp_end = 0;           
@@ -95,13 +103,18 @@ void setup() {
   pinMode(STBY, OUTPUT);
   pinMode(M1, OUTPUT);
   pinMode(M2, OUTPUT);
+
+  pinMode(BLUE, OUTPUT);
+  pinMode(YELLOW, OUTPUT);
+  pinMode(GREEN, OUTPUT);
+  pinMode(RED, OUTPUT);
+  pinMode(WHITE, OUTPUT);
   digitalWrite(DIR, REVERSE);                   // Direction of motor
   
 }
 
 void loop() {
-
-        state_machine();
+  state_machine();
 }
 
 
@@ -265,8 +278,14 @@ double MicroCali( float frequency ){
  void state_machine(){
   
   switch(state){
+
+    
     
     case STANDBY:
+
+    digitalWrite(YELLOW, HIGH);         // LED indicator
+
+    
         #ifdef SERIAL_COMMS
         
             if(displayed == false){                                           // dont print unless its the first
@@ -280,15 +299,21 @@ double MicroCali( float frequency ){
         #endif
 
             if (receivedChar == START){                               // User selects START for normal use
+              
               #ifdef SERIAL_COMMS
               displayed = false;                                      //graphic already displayed...no more pls
               #endif
+
+              digitalWrite(YELLOW, LOW);                             // LED indicator
               state = DATAPULL_S;}  
                         
             else if(receivedChar == JOG){                              // User selects JOG to jog motor
+              
               #ifdef SERIAL_COMMS
               displayed = false;
               #endif
+              
+              digitalWrite(YELLOW, LOW);                             // LED indicator
               state = DATAPULL_J;}
                       
             else{state = STANDBY;}                                     // Or wait until user chooses
@@ -297,6 +322,8 @@ double MicroCali( float frequency ){
         break;
 
     case DATAPULL_S:
+
+        digitalWrite(BLUE, HIGH);                             // LED indicator
 
         #ifdef SERIAL_COMMS
             Serial.println(" ~~~~~~~~~~DATAPULL_S~~~~~~~~~ ");
@@ -370,16 +397,19 @@ double MicroCali( float frequency ){
               }
         #endif
 
-        duration = (3600 * hour_user + 60 * min_user + sec_user) * 1000;        // entire duration in msec for easy compare later
+        duration = ( (3600 * hour_user) + (60 * min_user) + sec_user) * 1000;   // entire duration in msec for easy compare later
         
         freq =  Q_to_Freq(q_user, syr_radius_user);                             // Get period from Q
         freq = MicroCali(freq);                                                 // Calibrate for microstepping + TICKET
-        validDur_Start(q_user, syr_capacity, duration);                         // final TICKET confirm duration 
-
+      
         if(duration == 0){TICKET = false;}
+        else if(TICKET == true){validDur_Start(q_user, syr_capacity, duration);}     // final TICKET confirm duration 
         
-        if(receivedChar == BACK){state = STANDBY;}                              // User requests to go back
+        if(receivedChar == BACK){
+          digitalWrite(BLUE, LOW);                                              // LED indicator
+          state = STANDBY;}                                                     // User requests to go back
         else if(TICKET){                                                        // Must lie within Q and duration range
+          digitalWrite(BLUE, LOW);                                               // LED indicator
           init_control(step_config);                                            // Calibrate controller
           state = RUN_S;}                                                       // Valid data, move forward
         else{state = DATAPULL_S;}                                               // Repeat if the data wasnt RX/right
@@ -388,13 +418,15 @@ double MicroCali( float frequency ){
 
 
     case DATAPULL_J:
-    
+        digitalWrite(BLUE, HIGH);                                               // LED indicator
+        digitalWrite(WHITE, HIGH);                                              // LED indicator
+        
         #ifdef SERIAL_COMMS
             
             Serial.println(" \n\n\n\n~~~~~~~~~~DATAPULL_JOG~~~~~~~~~ ");
             Serial.println(" What is the radius of the syringe plunger [m]? (newline)");
             while(newData_str == false){recvWithEndMarker();}                                                     
-            syr_capacity = userString2Float();
+            syr_radius_user = userString2Float();
             
             Serial.println(" What is the requested volumetric flow rate (Q) ? Range [69n , 10u] L/s (newline)");
             while(newData_str == false){recvWithEndMarker();} 
@@ -406,16 +438,46 @@ double MicroCali( float frequency ){
             if( receivedChar == 'R'){digitalWrite(DIR, REVERSE); }
             else if( receivedChar == 'F'){digitalWrite(DIR, FORWARD); } 
         #endif
-    
+
+          
+              
         freq =  Q_to_Freq(q_user, syr_radius_user);                             // Get period from Q
+
+        #ifdef TESTING
+                  Serial.println("radius, Q, freq ");
+                  Serial.print(syr_radius_user, 8);
+                  Serial.print(", ");
+                  Serial.print(q_user, 10);
+                  Serial.print(", ");
+                  Serial.println(freq);
+          #endif
+
+          
         freq = MicroCali(freq);                                                 // Calibrate microstepping & TICKET validation
 
+
+        #ifdef TESTING
+                  Serial.println("radius, Q, freq ");
+                  Serial.print(syr_radius_user, 8);
+                  Serial.print(", ");
+                  Serial.print(q_user, 10);
+                  Serial.print(", ");
+                  Serial.println(freq);
+
+          #endif
+
+          
         if(receivedChar == BACK){                                               // User requests to go back
               //reset metrics and go back
               freq = 0;
+              digitalWrite(BLUE, LOW);                                               // LED indicator
+              digitalWrite(WHITE, LOW);                                              // LED indicator
               state = STANDBY;
         }
-        else if(TICKET == true){state = RUN_J;}                                // Valid data, move forward
+        else if(TICKET == true){
+          digitalWrite(BLUE, LOW);                                               // LED indicator
+          digitalWrite(WHITE, LOW);                                              // LED indicator
+          state = RUN_J;}                                                       // Valid data, move forward
         else{state = DATAPULL_J;}                                               // Repeat if the data wasnt RX/right
         
         break;
@@ -423,6 +485,9 @@ double MicroCali( float frequency ){
 
     case RUN_J:
 
+        digitalWrite(GREEN, HIGH);                                               // LED indicator
+        digitalWrite(WHITE, HIGH);                                              // LED indicator
+        
         // Allowing arduino to roam through cycles and not wait for user input while running
         #ifdef SERIAL_COMMS
             if(displayed == false){
@@ -434,6 +499,8 @@ double MicroCali( float frequency ){
         #endif
         
         if(receivedChar == ESTOP){
+            digitalWrite(GREEN, LOW);                                               // LED indicator
+            digitalWrite(WHITE, LOW);                                              // LED indicator
             state = STOP;
         }
         
@@ -445,11 +512,6 @@ double MicroCali( float frequency ){
         }
         
         else{
-
-          #ifdef TESTING
-          Serial.print(" Selected Q : ");
-          Serial.println(q_user,10);
-          #endif
           
           state = RUN_J;
           }
@@ -458,6 +520,8 @@ double MicroCali( float frequency ){
 
 
     case RUN_S:
+     digitalWrite(GREEN, HIGH);                                               // LED indicator
+
 
         #ifdef SERIAL_COMMS
             if(displayed == false){
@@ -473,7 +537,7 @@ double MicroCali( float frequency ){
             #ifdef SERIAL_COMMS
               displayed = false;
             #endif
-            
+            digitalWrite(GREEN, LOW);                                               // LED indicator
             state = STOP;
         }
 
@@ -508,14 +572,16 @@ double MicroCali( float frequency ){
 
     case STOP:
         Timer1.disablePwm(STEP);                                             // turn off motor
+        digitalWrite(RED, HIGH);                                               // LED indicator
         RUNNING = false;
         TICKET = false;
         displayed = false;
+        FINISH = false;
         q_user = 0;                                                   // clear user variables
         syr_radius_user = 0;
         freq = 0;
         duration = 0; 
-        
+        digitalWrite(RED, LOW);                                               // LED indicator
         state = STANDBY;
         break;
 
