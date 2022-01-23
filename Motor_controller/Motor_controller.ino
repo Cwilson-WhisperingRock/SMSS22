@@ -34,7 +34,6 @@ bool FINISH = false;
 // LED State Indicators
 #define YELLOW 3
 #define GREEN 4
-#define RED 5
 #define WHITE 10 
 #define BLUE 11
 
@@ -572,7 +571,6 @@ double MicroCali( float frequency ){
 
     case STOP:
         Timer1.disablePwm(STEP);                                             // turn off motor
-        digitalWrite(RED, HIGH);                                               // LED indicator
         RUNNING = false;
         TICKET = false;
         displayed = false;
@@ -581,7 +579,6 @@ double MicroCali( float frequency ){
         syr_radius_user = 0;
         freq = 0;
         duration = 0; 
-        digitalWrite(RED, LOW);                                               // LED indicator
         state = STANDBY;
         break;
 
