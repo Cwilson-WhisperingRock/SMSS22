@@ -106,7 +106,6 @@ void setup() {
   pinMode(BLUE, OUTPUT);
   pinMode(YELLOW, OUTPUT);
   pinMode(GREEN, OUTPUT);
-  pinMode(RED, OUTPUT);
   pinMode(WHITE, OUTPUT);
   digitalWrite(DIR, REVERSE);                   // Direction of motor
   
@@ -504,6 +503,7 @@ double MicroCali( float frequency ){
         }
         
         else if (RUNNING == false){
+            init_control(step_config);
             Timer1.initialize((1/freq) * 1000000);                  // Init PWM freq[microsec] (mult to conv to usec)
             Timer1.pwm(STEP, DC);                                   // Start motor  
             RUNNING = true;
@@ -542,6 +542,7 @@ double MicroCali( float frequency ){
 
         // init run of motor
         else if (RUNNING == false){
+            init_control(step_config);
             Timer1.initialize((1/freq) * 1000000);                  // Init PWM freq[microsec] (mult to conv to usec)
             time_stamp_start = millis();                            // Start recording time
             Timer1.pwm(STEP, DC);                                   // Start motor  
