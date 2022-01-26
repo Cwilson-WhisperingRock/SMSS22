@@ -41,6 +41,7 @@ bool FINISH = false;
 // Motor States
 #define FORWARD LOW           // motor direction
 #define REVERSE HIGH          // motor direction
+bool DIRECTION = FORWARD;
 bool RUNNING  = false;        // status of motor
 
 
@@ -58,8 +59,8 @@ char step_config = S_FULL;          // Set default to full step
 
 
 // Pulse/Freq Variables
-#define DC  0.5 * 1024              // Duty Cycle of PWM
-#define MTR_FREQ_MAX 681            // Max freq motor can handle [Hz]
+#define DC  0.6 * 1024              // Duty Cycle of PWM
+#define MTR_FREQ_MAX 875            // Max freq motor can handle [Hz]
 #define MTR_FREQ_MIN 120            // Min freq " 
 
 
@@ -106,7 +107,6 @@ void setup() {
   pinMode(BLUE, OUTPUT);
   pinMode(YELLOW, OUTPUT);
   pinMode(GREEN, OUTPUT);
-  pinMode(RED, OUTPUT);
   pinMode(WHITE, OUTPUT);
   digitalWrite(DIR, REVERSE);                   // Direction of motor
   
@@ -354,7 +354,7 @@ double MicroCali( float frequency ){
             newData_char = false;
             while(newData_char == false){recvOneChar();}
             if( receivedChar == 'R'){
-              digitalWrite(DIR, REVERSE); 
+              DIRECTION = REVERSE; 
 
               #ifdef TESTING
                   Serial.println(" Capacity, raduis, Q, hour, min, sec, Dir ");
@@ -374,7 +374,7 @@ double MicroCali( float frequency ){
               #endif
               }
             else if( receivedChar == 'F'){
-              digitalWrite(DIR, FORWARD); 
+              DIRECTION = FORWARD;
               
               #ifdef TESTING
                   Serial.println(" Capacity, raduis, Q, hour, min, sec, Dir ");
@@ -434,8 +434,8 @@ double MicroCali( float frequency ){
             Serial.println(" Direction? F for forward, R for reverse, or B to back to Standby (No line ending)");
             newData_char = false;
             while(newData_char == false){recvOneChar();}
-            if( receivedChar == 'R'){digitalWrite(DIR, REVERSE); }
-            else if( receivedChar == 'F'){digitalWrite(DIR, FORWARD); } 
+            if( receivedChar == 'R'){DIRECTION = REVERSE; }
+            else if( receivedChar == 'F'){DIRECTION = FORWARD;} 
         #endif
 
           
@@ -504,6 +504,8 @@ double MicroCali( float frequency ){
         }
         
         else if (RUNNING == false){
+            init_control(step_config);                              // setup motor controller
+            digitalWrite(DIR, DIRECTION);                           // rewrite DIR pin for direction
             Timer1.initialize((1/freq) * 1000000);                  // Init PWM freq[microsec] (mult to conv to usec)
             Timer1.pwm(STEP, DC);                                   // Start motor  
             RUNNING = true;
@@ -542,6 +544,8 @@ double MicroCali( float frequency ){
 
         // init run of motor
         else if (RUNNING == false){
+            init_control(step_config);                              // setup motor controller
+            digitalWrite(DIR, DIRECTION);                           // rewrite DIR pin for direction
             Timer1.initialize((1/freq) * 1000000);                  // Init PWM freq[microsec] (mult to conv to usec)
             time_stamp_start = millis();                            // Start recording time
             Timer1.pwm(STEP, DC);                                   // Start motor  
@@ -557,12 +561,6 @@ double MicroCali( float frequency ){
           
           if( time_stamp_end >= duration){ FINISH = true;}          // if time had reached user's request
         
-        #ifdef TESTING
-            Serial.print("Current motor run time in msec: ");
-            Serial.print(time_stamp_end); 
-            Serial.print(" vs user's request : ");
-            Serial.println(duration);
-        #endif
         
         state = RUN_S;
         }
