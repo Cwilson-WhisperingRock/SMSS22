@@ -5,31 +5,37 @@
 
 // Arduino Addresses
 #define PI_ADD 0x01
-#define ARD_ADD_1 0x7                 // This device
-#define ARD_ADD_2 0x14
-#define ARD_ADD_3 0x28
+#define ARD_ADD_1 0x14                 // This device
+#define ARD_ADD_2 0x28
+#define ARD_ADD_3 0x42
 
 bool EVEN = false;
+char i2c_error = 0;
 
 void setup() {
-  Wire.begin(ARD_ADD_1);              // ARD device joins I2C bus as sub with address
+  Wire.begin(ARD_ADD_2);              // ARD device joins I2C bus as sub with address
+  Wire.onRequest(receivedEvent);      // Go to function is requested
   Serial.begin(9600);                 // Serial for user
 }
 
 void loop() {
-
-Wire.beginTransmission(44); // transmit to device #44 (0x2c)
-                              // device address is specified in datasheet
-  Wire.write(val);             // sends value byte  
-  Wire.endTransmission();     // stop transmitting
-
-  val++;        // increment value
-  if(val == 64) // if reached 64th position (max)
-  {
-    val = 0;    // start over from lowest value
+  delay(100);
   }
-  delay(500);
+
+void receivedEvent(int numBytes_TX){
+  int x = Wire.read();
+
+  if( x %2 == 0){EVEN = true;}
+  else{EVEN = false;}
+
+  Wire.beginTransmission(PI_ADD);
+  Wire.write(EVEN);
+  i2c_error = Wire.endTransmission(true);
+
+  if(i2c_error == 4){Serial.println("Other Errors");}
+  else if (i2c_error == 3){Serial.println("NACK on TX Data");}
+  else if (i2c_error == 2){Serial.println("NACK on TX Address");}
+  else if (i2c_error == 1){Serial.println("Data too long in buffer");}
+  else if (i2c_error == 0){Serial.println("Sucessful TX");}
+  
 }
-
-
-void I2C_TX
