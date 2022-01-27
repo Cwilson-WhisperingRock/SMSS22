@@ -1,0 +1,27 @@
+# What the PI needs to do in terms of arduinoIDE Wire library
+
+ Wire.begin(PI_ADD)
+
+ Wire.beginTransmission(ARD_ADD_2);
+ 
+ Wire.write(userData);
+ 
+ i2c_error = Wire.endTransmission(False); # main pi is still in control
+ 
+ if i2c_error == 4:
+     print("Other Error")
+ else if i2c_error == 3:
+     print("NACK on data TX")
+ else if i2c_error == 2:
+     print("NACK on address TX")
+ else:
+     print("Sucessful TX")
+
+Wire.requestFrom(ARD_ADD_2, userDataByte, False);
+
+while( Wire.available()):
+    RXData = Wire.read();
+
+print(" User number : " , UserData, "is divisable by 2? : ", RXData)
+
+delay(500)
