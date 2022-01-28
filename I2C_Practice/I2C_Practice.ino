@@ -14,19 +14,58 @@ char i2c_error = 0;
 
 void setup() {
   Wire.begin(ARD_ADD_2);              // ARD device joins I2C bus as sub with address
-  Wire.onRequest(receivedEvent);      // Go to function is requested
+  Wire.onReceive(receivedEvent);      // Go to function is requested
   Serial.begin(9600);                 // Serial for user
+  Serial.println("work");
+  //Wire.onRequest(receivedReq);
 }
 
 void loop() {
-  delay(100);
+
   }
 
 void receivedEvent(int numBytes_TX){
-  int x = Wire.read();
 
-  if( x %2 == 0){EVEN = true;}
-  else{EVEN = false;}
+  Serial.println("Rc");
+  
+  int x = 0;
+
+  //Serial.println("Just waiting now");
+  
+   x = Wire.read();  
+   Serial.println(x);
+
+  
+  if( x %2 == 0){
+    EVEN = true;
+    Serial.println("Even");
+    }
+  else{
+    EVEN = false;
+    Serial.println("Odd");
+    }
+
+  
+  delay(1000);
+
+  
+  Wire.beginTransmission(PI_ADD);
+  Wire.write(EVEN);
+  i2c_error = Wire.endTransmission(true);
+
+  if(i2c_error == 4){Serial.println("Other Errors");}
+  else if (i2c_error == 3){Serial.println("NACK on TX Data");}
+  else if (i2c_error == 2){Serial.println("NACK on TX Address");}
+  else if (i2c_error == 1){Serial.println("Data too long in buffer");}
+  else if (i2c_error == 0){Serial.println("Sucessful TX");}
+
+  
+  
+}
+
+void receivedReq(int numBytes_TX){
+
+  Serial.println("Rq");
 
   Wire.beginTransmission(PI_ADD);
   Wire.write(EVEN);
