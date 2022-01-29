@@ -1,23 +1,27 @@
-#include <TimerOne.h>         // Custom PWM freq
-#include <Wire.h>             // I2C 
+// Connor Wilson
+// Winter 2022
+// SMSS Motor Controller V1.0
+
+
+#include <TimerOne.h>           // Custom PWM freq
+#include <Wire.h>               // I2C 
 
 
 // Test Variables
-#define MANUAL                // Comment to cancel manual mode
-#define TESTING               // Comment to cancel testing
-#define SERIAL_COMMS          // Comment to cancel serial comms
-//#define I2C_COMMS             // Comment to cancel I2C comms
+//#define TESTING               // Comment to cancel testing
+//#define SERIAL_COMMS          // Comment to cancel serial comms [manual testing]
+#define I2C_COMMS             // Comment to cancel I2C comms
 
 
 // State machine 
 enum State_enum {STANDBY, DATAPULL_S, DATAPULL_J, RUN_S, RUN_J, STOP};  // States of the state machine
-unsigned int state = STANDBY;                                                 // default state 
+unsigned int state = STANDBY;                                           // default state 
 #define START 'S'
 #define JOG 'J'
 #define BACK 'B'
 #define ESTOP 'E'
-bool TICKET = false;
-bool FINISH = false; 
+bool TICKET = false;        // true if user supplied data is valid with hardware
+bool FINISH = false;        // true if user requested duration is matched by hardware 
 
  
 
@@ -39,10 +43,10 @@ bool FINISH = false;
 
 
 // Motor States
-#define FORWARD LOW           // motor direction
-#define REVERSE HIGH          // motor direction
-bool DIRECTION = FORWARD;
-bool RUNNING  = false;        // status of motor
+#define FORWARD LOW           // motor direction for pin logic
+#define REVERSE HIGH          // motor direction for pin logic
+bool DIRECTION = FORWARD;     // motor direction
+bool RUNNING  = false;        // true if motor is running
 
 
 // Microstep settings for md39a[ M1, M2, STEP, DIR ]
@@ -55,13 +59,14 @@ bool RUNNING  = false;        // status of motor
 #define S_64    0xD
 #define S_128   0x8
 #define S_256   0x6
-char step_config = S_FULL;          // Set default to full step
+char step_config = S_FULL;                  // Set default to full step
 
 
 // Pulse/Freq Variables
-#define DC  0.6 * 1024              // Duty Cycle of PWM
-#define MTR_FREQ_MAX 875            // Max freq motor can handle [Hz]
-#define MTR_FREQ_MIN 120            // Min freq " 
+#define DC  0.6 * 1024                      // Duty Cycle of PWM                                          [UNSURE WHAT RATIO IS BEST]
+#define MTR_FREQ_MAX 875                    // Max freq motor can handle [Hz]
+#define MTR_RES_MIN 120                     // Min freq for smooth performance [Hz]
+#define MTR_FREQ_MIN 0                      // Min freq motor can handle [Hz]                             [UNKNOWN]
 
 
 // Physical Variables
@@ -74,29 +79,38 @@ float q_user = 0;                           // volumetric flow rate as requested
 float freq = 200;                           // [sec/step]
 unsigned int sec_user = 0;                  // User requested sec duration
 unsigned int min_user = 0;                  // User requested min duration
-unsigned long hour_user = 0;                 // User "         hour "
+unsigned long hour_user = 0;                // User "         hour "
 unsigned long duration = 0;                 // Run time {msec}
-unsigned long time_stamp_start = 0;          
-unsigned long time_stamp_end = 0;           
+unsigned long time_stamp_start = 0;         // time keeping 
+unsigned long time_stamp_end = 0;           // "
 
 
 // Serial/I2C Variables
-char receivedChar;
-boolean newData_char = false;
-boolean newData_str = false;
-const byte numChars = 32;
-char receivedChars[numChars];               // an array to store the received data
-bool displayed = false;
+char receivedChar;                          // pool for char data
+boolean newData_char = false;               // true if new char data is RX 
+boolean newData_str = false;                // true if new str data is RX 
+const byte numChars = 32;                   // str length when TX 
+char receivedChars[numChars];               // pool for str data 
+bool displayed = false;                     // true if graphic is displayed 
 
-
+#define PI_ADD 0x01                         // Pi address
+#define ARD_ADD_1 0x14                      // Arduino #1
+#define ARD_ADD_2 0x28                      // Arduino #2
+#define ARD_ADD_3 0x42                      // Arduino #3
 
 
 
 void setup() {
 
+  #ifdef SERIAL_COMMS
   Serial.begin(9600);                           // Serial comms init
+  #endif
 
-  //I2C comms setup
+  #ifdef I2C_COMMS
+  Wire.begin(ARD_ADD_1);                        // I2C bus logon with sub address
+  Wire.onReceive(recvEvent);                    // run recvEvent on a main write to read <-
+  Wire.onRequest(reqEvent);                     // run reqEvent on a main read to write ->
+  #endif
 
   pinMode(STEP, OUTPUT);                        // Setup controller pins
   pinMode(DIR, OUTPUT);
@@ -104,7 +118,7 @@ void setup() {
   pinMode(M1, OUTPUT);
   pinMode(M2, OUTPUT);
 
-  pinMode(BLUE, OUTPUT);
+  pinMode(BLUE, OUTPUT);                        // Indicator LED pin setup
   pinMode(YELLOW, OUTPUT);
   pinMode(GREEN, OUTPUT);
   pinMode(WHITE, OUTPUT);
@@ -172,7 +186,7 @@ float Q_to_Freq( float Q, float Radius){
 /*~~~~~~~~~~~~~~~~~~~~~~~~ MicroCali() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  *  Purpose : Recalibrate the md39a motor controller's microstep setting to accomidate the min freq recommendation
  *            Max freq will result in Full step at max freq + warning
- *  Input : frequency, [global] step_config, [global] MTR_FREQ_MAX, [global] MTR_FREQ_MIN
+ *  Input : frequency, [global] step_config, [global] MTR_FREQ_MAX, [global] MTR_RES_MIN
  *  Output : frequency, [global] step_config, [global] TICKET
  *  Notes : Removes decimal point to save memory
  */
@@ -185,7 +199,7 @@ double MicroCali( float frequency ){
     step_config = S_FULL;                                                 // Set controller to full step
     TICKET = false;                                                         // Mark ticket invalid
     
-        #ifdef MANUAL
+        #ifdef SERIAL_COMMS
         Serial.println(" Requested Q value exceeds hardware's MAX RPS");  // Inform user
         #endif
         
@@ -193,9 +207,9 @@ double MicroCali( float frequency ){
   }
 
   // Or if less than the min freq
-  else if (frequency < MTR_FREQ_MIN){
+  else if (frequency < MTR_RES_MIN){
     
-    double microstep = MTR_FREQ_MIN / frequency;                          // Microstep size 
+    double microstep = MTR_RES_MIN / frequency;                          // Microstep size 
     
     if ( microstep <= 2 ){                                                // Half step
       step_config = S_HALF;                                               // Set controller to half step
@@ -249,11 +263,11 @@ double MicroCali( float frequency ){
       step_config = S_256;                                                 // Set controller to smallest step
       TICKET = false;
       
-        #ifdef MANUAL
+        #ifdef SERIAL_COMMS
         Serial.println(" Requested Q value is below hardware's MIN RPS");  // Inform user
         #endif
         
-    return MTR_FREQ_MIN;                                                  // Set freq to min
+    return MTR_RES_MIN;                                                  // Set freq to min
       
     }
  }
@@ -666,4 +680,25 @@ void validDur_Start(float Q,float Vol, unsigned int Time){
   else {TICKET = false;}
   }
 
-  
+
+
+/* ~~~~~~~~~~~~~~~~~~~~~~~~ recvEvent() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ *  Purpose : Read the incoming data from main's request
+ *  Input : 
+ *  Output : 
+ */
+void recvEvent(int numBytes_TX){
+  int x = 0;
+  x = Wire.read();  
+}
+
+
+
+/* ~~~~~~~~~~~~~~~~~~~~~~~~ reqEvent() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ *  Purpose : Write data to main at its request
+ *  Input : 
+ *  Output : 
+ */
+void reqEvent(){
+  Wire.write(4);
+}
