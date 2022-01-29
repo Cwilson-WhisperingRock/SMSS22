@@ -3,8 +3,12 @@
 # SMSS Hub Controller V1.0
 
 
-from smbus2 import SMBus, i2c_msg
-from time import sleep
+from smbus2 import SMBus, i2c_msg        # I2C library
+from time import sleep                   # python delay
+import curses
+from curses import wrapper
+from curses.textpad import Textbox, rectangle
+
 
     
 def main():
@@ -76,13 +80,12 @@ def recv_all_byte(bool_array):
         return stor
         
 
+def curs(stdscr):
+    pass
+
+wrapper(curs)
+
+
+
 if __name__ == "__main__":
-    main(
-
-
-
-
-        
-        
-        
-        
+    main()
