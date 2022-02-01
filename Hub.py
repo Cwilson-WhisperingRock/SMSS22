@@ -30,8 +30,16 @@ class HubMachine(object):
         self.machine.add_transition(trigger = 'REBOOT', source = '*', dest = 'RESET')
 
 
-
-
+global FRAME, POLL, START, JOG, RUN_J, RUN_S
+global reqGUI
+reqGUI = 0x0
+reqGUI = 0x0
+FRAME = 0x0
+POLL = 0x1
+START = 0x2
+JOG = 0x3
+RUN_J = 0x4
+RUN_S = 0x5
     
 def main():
     
@@ -43,11 +51,18 @@ def main():
     address = [ARD_ADD_1, ARD_ADD_2, ARD_ADD_3]
 
     #availability of arduino deivces 0 = false, 1 = true
-    rollcall = [0,0,0]                   
+    rollcall = [0,0,0]
 
-    # PI to Arduino commands
-    global CONTACT 
+    # GUI command codes
+    global FRAME, POLL, START, JOG, RUN_J, RUN_S
+    global reqGUI
+
+    # PI to Arduino command codes
+    global CONTACT                # First contact for devices on bus 
     CONTACT = 0x4
+
+    #curses window
+    stdscr = curses.initscr()
     
     
 
@@ -60,9 +75,11 @@ def main():
 
             #Identify devices on the buffer
             rollcall = deviceRollcall(address)
-            print(rollcall)
+            # TEST print(rollcall)
+            sleep(1)
 
             #Display GUI frame and windows (based on rollcall)
+            curs(stdscr)
 
             # Poll for user input on GUI
 
@@ -149,22 +166,25 @@ def deviceRollcall(myaddress):
 
         # Try to contact each device
         try:
-            bus.write_byte(ARD_ADD_1, CONTACT)
+            bus.write_byte(myaddress[0], CONTACT)
             dev_status[0] = 1
         except:
-            print("Device 1 not on bus")
+            pass
+            #print("Device 1 not on bus")
 
         try:
-            bus.write_byte(ARD_ADD_2, CONTACT)
+            bus.write_byte(myaddress[1], CONTACT)
             dev_status[1] = 1
         except:
-            print("Device 2 not on bus")
+            pass
+            #print("Device 2 not on bus")
 
         try:
-            bus.write_byte(ARD_ADD_3, CONTACT)
+            bus.write_byte(myaddress[2], CONTACT)
             dev_status[2] = 1
         except:
-            print("Device 3 not on bus")
+            pass
+            #print("Device 3 not on bus")
 
 
     return dev_status
@@ -173,7 +193,115 @@ def deviceRollcall(myaddress):
     
 
 def curs(stdscr):
-    pass
+
+    global FRAME, POLL, START, JOG, RUN_J, RUN_S
+    global reqGUI
+    
+    # Color combinations (ID, foreground, background)
+    curses.init_pair(1, curses.COLOR_RED, curses.COLOR_WHITE)
+    RED_AND_WHITE = curses.color_pair(1)
+
+    curses.init_pair(2, curses.COLOR_BLACK, curses.COLOR_WHITE)
+    BLACK_AND_WHITE = curses.color_pair(2)
+
+    curses.init_pair(3, curses.COLOR_WHITE, curses.COLOR_GREEN)
+    WHITE_AND_GREEN = curses.color_pair(3)
+
+    curses.init_pair(4, curses.COLOR_YELLOW, curses.COLOR_CYAN)
+    YELLOW_AND_CYAN = curses.color_pair(4)
+    
+
+    # Display selection
+    if reqGUI == FRAME:
+        stdscr.clear()
+        stdscr.attron(YELLOW_AND_CYAN)
+        stdscr.resize(28,100)
+        stdscr.move(0,0)
+
+        # Fill square main in 
+        for y in range(1,28):
+            for x in range(1, 100-1):
+                stdscr.addch(" ")
+            stdscr.move(y,1)
+        stdscr.border()
+
+        #Title block
+        stdscr.move(2,30)
+        stdscr.addstr("        Smart Motor Syringe Pump        ", BLACK_AND_WHITE)
+
+
+        #Fill in device squares
+        stdscr.attroff(YELLOW_AND_CYAN)
+        stdscr.attron(BLACK_AND_WHITE)
+        
+        stdscr.move(5,10)
+        stdscr.addstr("Device 1 :")
+        stdscr.move(5,30)
+
+        for y in range(5,11):
+            for x in range(30, 90-1):
+                stdscr.addch(" ")
+            stdscr.move(y,30)
+
+        stdscr.move(12,10)
+        stdscr.addstr("Device 2 :")
+        stdscr.move(12,30)
+
+        for y in range(12,18):
+            for x in range(30, 90-1):
+                stdscr.addch(" ")
+            stdscr.move(y,30)
+
+        stdscr.move(19,10)
+        stdscr.addstr("Device 3 :")
+        stdscr.move(19,30)
+
+        for y in range(19,25):
+            for x in range(30, 90-1):
+                stdscr.addch(" ")
+            stdscr.move(y,30)
+
+
+        stdscr.move(21,40)
+
+        rectangle(stdscr, 25, 35, 26, 80)
+            
+        stdscr.move(5,30)
+
+
+
+
+
+
+            
+
+
+        
+        stdscr.refresh()
+        
+        
+        stdscr.getch()
+    
+    elif reqGUI == POLL:
+        pass
+
+    elif reqGUI == START:
+        pass
+
+    elif reqGUI == JOG:
+        pass
+
+    elif reqGUI == RUN_J:
+        pass
+
+    elif reqGUI == RUN_S:
+        pass
+
+    else:
+        print("Requested GUI Error")
+
+    
+    
 
 wrapper(curs)
 
