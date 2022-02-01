@@ -3,7 +3,7 @@
 # SMSS Hub Controller V1.0
 
 
-from smbus2 import SMBus, i2c_msg        # I2C library
+#from smbus2 import SMBus, i2c_msg        # I2C library
 from time import sleep                   # python delay
 
 from transitions import Machine          # state machine
@@ -29,7 +29,7 @@ class HubMachine(object):
         self.machine.add_transition(trigger = 'RETURN', source = 'RESET', dest = 'START')
         self.machine.add_transition(trigger = 'REBOOT', source = '*', dest = 'RESET')
 
-
+# States for GUI
 global FRAME, POLL, START, JOG, RUN_J, RUN_S
 global reqGUI
 reqGUI = 0x0
@@ -40,6 +40,12 @@ START = 0x2
 JOG = 0x3
 RUN_J = 0x4
 RUN_S = 0x5
+
+# Data between user-curses-arduino
+global rollcall, poll_user
+rollcall = [0, 0, 0]
+poll_user = [0, 0, 0]
+
     
 def main():
     
@@ -51,7 +57,8 @@ def main():
     address = [ARD_ADD_1, ARD_ADD_2, ARD_ADD_3]
 
     #availability of arduino deivces 0 = false, 1 = true
-    rollcall = [0,0,0]
+    global rollcall
+    rollcall = [1,0,0]
 
     # GUI command codes
     global FRAME, POLL, START, JOG, RUN_J, RUN_S
@@ -74,14 +81,18 @@ def main():
         if Hub.state == 'START' :
 
             #Identify devices on the buffer
-            rollcall = deviceRollcall(address)
+            #rollcall = deviceRollcall(address)
             # TEST print(rollcall)
             sleep(1)
 
-            #Display GUI frame and windows (based on rollcall)
+            #Display GUI frame
+            reqGUI = FRAME
             curs(stdscr)
+            
 
             # Poll for user input on GUI
+            reqGUI = POLL
+            curs(stdscr)
 
             # Wait for confirm
 
@@ -103,7 +114,7 @@ def main():
             pass
 
 
-    
+"""    
 
         
 
@@ -190,12 +201,13 @@ def deviceRollcall(myaddress):
     return dev_status
 
 
-    
+   """ 
 
 def curs(stdscr):
 
     global FRAME, POLL, START, JOG, RUN_J, RUN_S
     global reqGUI
+    global rollcall
     
     # Color combinations (ID, foreground, background)
     curses.init_pair(1, curses.COLOR_RED, curses.COLOR_WHITE)
@@ -230,10 +242,11 @@ def curs(stdscr):
         stdscr.addstr("        Smart Motor Syringe Pump        ", BLACK_AND_WHITE)
 
 
-        #Fill in device squares
+        
         stdscr.attroff(YELLOW_AND_CYAN)
         stdscr.attron(BLACK_AND_WHITE)
-        
+
+        #Device one block
         stdscr.move(5,10)
         stdscr.addstr("Device 1 :")
         stdscr.move(5,30)
@@ -243,6 +256,7 @@ def curs(stdscr):
                 stdscr.addch(" ")
             stdscr.move(y,30)
 
+        # Device two block
         stdscr.move(12,10)
         stdscr.addstr("Device 2 :")
         stdscr.move(12,30)
@@ -252,6 +266,7 @@ def curs(stdscr):
                 stdscr.addch(" ")
             stdscr.move(y,30)
 
+        # Device three block
         stdscr.move(19,10)
         stdscr.addstr("Device 3 :")
         stdscr.move(19,30)
@@ -262,28 +277,58 @@ def curs(stdscr):
             stdscr.move(y,30)
 
 
+        #Re-center and refresh
         stdscr.move(21,40)
-
         rectangle(stdscr, 25, 35, 26, 80)
-            
         stdscr.move(5,30)
-
-
-
-
-
-
-            
-
-
-        
         stdscr.refresh()
+
         
-        
-        stdscr.getch()
     
     elif reqGUI == POLL:
-        pass
+        x = 0
+
+        if rollcall[0] > 0:
+            # display window
+            stdscr.attron(RED_AND_WHITE)
+            winPoll = curses.newwin(5, 60, 5, 30)
+            winPoll.attron(RED_AND_WHITE)
+            winPoll.move(1, 5)
+            winPoll.addstr("Device 1 Mode :      | OFF | JOG | RUN |")
+            winPoll.move(3, 5)
+            winPoll.addstr("Error Messages : ")
+            winPoll.refresh()
+            
+            # collect data
+            q = 0
+            key = None
+                
+            while key != "KEY_ENTER":
+                try: 
+                    key = stdscr.getkey()
+                except:
+                    key = None
+
+                if key == "KEY_LEFT":
+                    if q > 0:
+                        q -= 1
+                        
+                elif key == "KEY_RIGHT":
+                    if q < 2:
+                        q += 1
+                        
+                winPoll.addch(q)
+                winPoll.refresh()
+                
+
+        if rollcall[1] > 0:
+            #display window and collect
+            pass
+
+        if rollcall[2] > 0:
+            #display window and collect
+            pass
+        
 
     elif reqGUI == START:
         pass
@@ -301,7 +346,7 @@ def curs(stdscr):
         print("Requested GUI Error")
 
     
-    
+
 
 wrapper(curs)
 
