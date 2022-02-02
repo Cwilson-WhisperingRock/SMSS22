@@ -221,6 +221,9 @@ def curs(stdscr):
 
     curses.init_pair(4, curses.COLOR_YELLOW, curses.COLOR_CYAN)
     YELLOW_AND_CYAN = curses.color_pair(4)
+
+    curses.curs_set(1)
+    
     
 
     # Display selection
@@ -292,33 +295,40 @@ def curs(stdscr):
             # display window
             stdscr.attron(RED_AND_WHITE)
             winPoll = curses.newwin(5, 60, 5, 30)
-            winPoll.attron(RED_AND_WHITE)
-            winPoll.move(1, 5)
-            winPoll.addstr("Device 1 Mode :      | OFF | JOG | RUN |")
-            winPoll.move(3, 5)
-            winPoll.addstr("Error Messages : ")
+            #curses.noecho()
+            #winPoll.nodelay(True)
+            winPoll.clear()
+            winPoll.attron(WHITE_AND_GREEN)
+            winPoll.addstr(1, 5, "Device 1 Mode :      | OFF | JOG | RUN |")
+            winPoll.addstr(3, 5, "Error Messages : ")
             winPoll.refresh()
             
             # collect data
             q = 0
-            key = None
+            key = " "
                 
-            while key != "KEY_ENTER":
-                try: 
-                    key = stdscr.getkey()
-                except:
-                    key = None
+            while key is not curses.KEY_ENTER:
 
-                if key == "KEY_LEFT":
-                    if q > 0:
-                        q -= 1
-                        
-                elif key == "KEY_RIGHT":
-                    if q < 2:
-                        q += 1
-                        
-                winPoll.addch(q)
+                winPoll.clear()
                 winPoll.refresh()
+                
+                key = winPoll.getkey()
+
+                if key is curses.KEY_LEFT:
+                    if q > 0:
+                        q = q - 1
+                        
+                elif key is curses.KEY_RIGHT:
+                    if q < 2:
+                        q = q + 1
+
+                winPoll.addstr(q+1, q+1,f"Hello {key}")
+                winPoll.refresh()
+                sleep(1)
+                
+            winPoll.addstr(q+1, q+1, "Hello ")
+            winPoll.refresh()
+            sleep(1)
                 
 
         if rollcall[1] > 0:
