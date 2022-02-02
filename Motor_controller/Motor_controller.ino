@@ -10,7 +10,9 @@
 // Test Variables
 //#define TESTING               // Comment to cancel testing
 //#define SERIAL_COMMS          // Comment to cancel serial comms [manual testing]
-#define I2C_COMMS             // Comment to cancel I2C comms
+#define I2C_COMMS               // Comment to cancel I2C comms
+//#define ard_nano_uno            // Using nano/uno board 
+#define ard_micro               // Using micro board
 
 
 // State machine 
@@ -23,24 +25,41 @@ unsigned int state = STANDBY;                                           // defau
 bool TICKET = false;        // true if user supplied data is valid with hardware
 bool FINISH = false;        // true if user requested duration is matched by hardware 
 
- 
+#ifdef ard_nano_uno
+  // Pin Connections 
+  #define STEP 9                // PWM signal for motor
+  #define DIR 6                 // Direction of motor
+  #define STBY 2                // Controller's standby enable (both EN and STBY must be low for low power mode)
+  #define M1 7                  // microstep config bit 1
+  #define M2 8                  // microstep config bit 2
+  // NOTE : STEP, DIR, M2, M1 are all used to set the microstep in the init latching 
+  //        but only STEP and DIR are availible after init
 
-// Pin Connections
-#define STEP 9                // PWM signal for motor
-#define DIR 6                 // Direction of motor
-#define STBY 2                // Controller's standby enable (both EN and STBY must be low for low power mode)
-#define M1 7                  // microstep config bit 1
-#define M2 8                  // microstep config bit 2
-// NOTE : STEP, DIR, M2, M1 are all used to set the microstep in the init latching 
-//        but only STEP and DIR are availible after init
+
+  // LED State Indicators
+  #define YELLOW 3
+  #define GREEN 4
+  #define WHITE 10 
+  #define BLUE 11
+#endif
+
+#ifdef ard_micro
+  // Pin Connections 
+  #define STEP 5                
+  #define DIR 4                 
+  #define STBY 6                
+  #define M1 7                  
+  #define M2 8                  
 
 
-// LED State Indicators
-#define YELLOW 3
-#define GREEN 4
-#define WHITE 10 
-#define BLUE 11
 
+  // LED State Indicators
+  #define YELLOW 9
+  #define GREEN 10
+  #define WHITE 11 
+  #define BLUE 12
+
+#endif
 
 // Motor States
 #define FORWARD LOW           // motor direction for pin logic
@@ -107,7 +126,7 @@ void setup() {
   #endif
 
   #ifdef I2C_COMMS
-  Wire.begin(ARD_ADD_1);                        // I2C bus logon with sub address
+  Wire.begin(ARD_ADD_3);                        // I2C bus logon with sub address
   Wire.onReceive(recvEvent);                    // run recvEvent on a main write to read <-
   Wire.onRequest(reqEvent);                     // run reqEvent on a main read to write ->
   #endif
