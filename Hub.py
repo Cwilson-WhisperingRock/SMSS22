@@ -64,7 +64,7 @@ def main():
 
     #availability of arduino deivces 0 = false, 1 = true
     global rollcall
-    rollcall = [1,0,1]
+    rollcall = [1,0,0]
 
     # GUI command codes
     global FRAME, POLL, DATA, RUN
@@ -502,7 +502,29 @@ def curs(stdscr):
             elif poll_user[0] == 1:
                 winData1 = curses.newwin(5, 60, 5, 30)
                 winData1.attron(WHITE_AND_MAGENTA)
+
+
+                winData1.addstr(0, 0, "Volumetric Flow Rate Q [L/s] in [70n, 10u] : ")
                 winData1.refresh()
+                win_data_ret = curses.newwin(1, 10, 5, 76)
+                curses.echo()
+                box = Textbox(win_data_ret)
+                box.edit()
+                q_user[0] = box.gather().strip().replace("\n", "")
+
+
+                winData1.addstr(1, 0, "Syringe Radius in [m] : ")
+                win_data_ret.clear()
+                win_data_ret.mvwin(6,55)
+                winData1.refresh()
+                box.edit()
+                radius_user[0] = box.gather().strip().replace("\n", "")
+
+                winData1.addstr(4, 4, radius_user[0])
+                winData1.refresh()
+                sleep(5)
+
+
 
 
 
