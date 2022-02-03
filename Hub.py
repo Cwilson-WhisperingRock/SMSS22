@@ -30,21 +30,27 @@ class HubMachine(object):
         self.machine.add_transition(trigger = 'REBOOT', source = '*', dest = 'RESET')
 
 # States for GUI
-global FRAME, POLL, START, JOG, RUN_J, RUN_S
+global FRAME, POLL, DATA, RUN
 global reqGUI
-reqGUI = 0x0
 reqGUI = 0x0
 FRAME = 0x0
 POLL = 0x1
-START = 0x2
-JOG = 0x3
-RUN_J = 0x4
-RUN_S = 0x5
+DATA = 0x2
+RUN = 0x3
+
 
 # Data between user-curses-arduino
-global rollcall, poll_user
+global rollcall, poll_user, q_user, radius_user, cap_user
+global hour_user, min_user, sec_user, dir_user
 rollcall = [0, 0, 0]
 poll_user = [0, 0, 0]
+q_user = [0,0,0]
+radius_user = [0,0,0]
+cap_user = [0,0,0]
+hour_user = [0,0,0]
+min_user = [0,0,0]
+sec_user = [0,0,0]
+dir_user = [0,0,0]
 
     
 def main():
@@ -61,20 +67,18 @@ def main():
     rollcall = [1,0,0]
 
     # GUI command codes
-    global FRAME, POLL, START, JOG, RUN_J, RUN_S
+    global FRAME, POLL, DATA, RUN
     global reqGUI
 
     # PI to Arduino command codes
-    global CONTACT                # First contact for devices on bus 
-    CONTACT = 0x4
+    #global CONTACT                # First contact for devices on bus 
+    #CONTACT = 0x4
 
     #curses window
     stdscr = curses.initscr()
     
-    
-
     #state machine init
-    Hub = HubMachine("Wilson")
+    Hub = HubMachine("SMSS")
 
     while True:
 
@@ -82,24 +86,22 @@ def main():
 
             #Identify devices on the buffer
             #rollcall = deviceRollcall(address)
-            # TEST print(rollcall)
             sleep(1)
 
-            #Display GUI frame
+            #Display GUI background frame
             reqGUI = FRAME
             curs(stdscr)
             
-
-            # Poll for user input on GUI
+            # Poll user for device run modes
             reqGUI = POLL
             curs(stdscr)
 
-            # Wait for confirm
+            Hub.CONFIRM()
 
-            # Send requested states to devices
 
         elif Hub.state == 'DATAPULL' :
-            pass
+            reqGUI = DATA
+            curs(stdscr)
 
         elif Hub.state == 'RUN' :
             pass
@@ -205,9 +207,10 @@ def deviceRollcall(myaddress):
 
 def curs(stdscr):
 
-    global FRAME, POLL, START, JOG, RUN_J, RUN_S
+    global FRAME, POLL, DATA, RUN
     global reqGUI
-    global rollcall
+    global rollcall, poll_user, q_user, radius_user, cap_user
+    global hour_user, min_user, sec_user, dir_user
     
     # Color combinations (ID, foreground, background)
     curses.init_pair(1, curses.COLOR_RED, curses.COLOR_WHITE)
@@ -221,9 +224,12 @@ def curs(stdscr):
 
     curses.init_pair(4, curses.COLOR_YELLOW, curses.COLOR_CYAN)
     YELLOW_AND_CYAN = curses.color_pair(4)
+
+    curses.init_pair(5, curses.COLOR_WHITE, curses.COLOR_MAGENTA)
+    WHITE_AND_MAGENTA = curses.color_pair(5)
     
 
-    # Display selection
+    # Display background frame
     if reqGUI == FRAME:
         stdscr.clear()
         stdscr.attron(YELLOW_AND_CYAN)
@@ -279,67 +285,265 @@ def curs(stdscr):
 
         #Re-center and refresh
         stdscr.move(21,40)
-        rectangle(stdscr, 25, 35, 26, 80)
+        stdscr.addstr(25, 35, "                                             ")
         stdscr.move(5,30)
         stdscr.refresh()
 
         
-    
+    # Poll user for device run modes
     elif reqGUI == POLL:
         x = 0
 
         if rollcall[0] > 0:
             # display window
-            stdscr.attron(RED_AND_WHITE)
-            winPoll = curses.newwin(5, 60, 5, 30)
-            winPoll.attron(RED_AND_WHITE)
-            winPoll.move(1, 5)
-            winPoll.addstr("Device 1 Mode :      | OFF | JOG | RUN |")
-            winPoll.move(3, 5)
-            winPoll.addstr("Error Messages : ")
-            winPoll.refresh()
+            winPoll1 = curses.newwin(5, 60, 5, 30)
+            curses.noecho()
+            winPoll1.nodelay(True)
+            winPoll1.clear()
+            winPoll1.attron(WHITE_AND_GREEN)
+            winPoll1.addstr(1, 5, "Device 1 Mode :      | OFF | JOG | RUN |")
+            winPoll1.addstr(3, 5, "Error Messages : ")
+            winPoll1.refresh()
             
             # collect data
             q = 0
-            key = None
-                
-            while key != "KEY_ENTER":
-                try: 
-                    key = stdscr.getkey()
+            key = ""
+
+            while key is not 'w':
+
+                winPoll1.attroff(BLACK_AND_WHITE)     
+                winPoll1.attron(WHITE_AND_GREEN)
+                winPoll1.addstr(1, 5, "Device 1 Mode :      | OFF | JOG | RUN |")
+
+                try:
+                    key = winPoll1.getkey()
                 except:
                     key = None
 
-                if key == "KEY_LEFT":
+                if key is 'a':
                     if q > 0:
                         q -= 1
                         
-                elif key == "KEY_RIGHT":
+                elif key is 'd':
                     if q < 2:
                         q += 1
+
+
+                if q is 0:
+                    winPoll1.attroff(WHITE_AND_GREEN)
+                    winPoll1.attron(BLACK_AND_WHITE)
+                    winPoll1.addstr(1, 26, "| OFF |")
+                    poll_user[0] = 0                    # disable the device
+                    
+                elif q is 1:
+                    winPoll1.attroff(WHITE_AND_GREEN)
+                    winPoll1.attron(BLACK_AND_WHITE)
+                    winPoll1.addstr(1, 32, "| JOG |")
+                    poll_user[0] = 1                    # jog the device
+
+                elif q is 2:
+                    winPoll1.attroff(WHITE_AND_GREEN)
+                    winPoll1.attron(BLACK_AND_WHITE)
+                    winPoll1.addstr(1, 38, "| RUN |")
+                    poll_user[0] = 2                    # run the device
                         
-                winPoll.addch(q)
-                winPoll.refresh()
                 
+                winPoll1.refresh()
+                sleep(0.75)
+
+
 
         if rollcall[1] > 0:
-            #display window and collect
-            pass
+            # display window
+            winPoll2 = curses.newwin(5, 60, 12, 30)
+            curses.noecho()
+            winPoll2.nodelay(True)
+            winPoll2.clear()
+            winPoll2.attron(WHITE_AND_GREEN)
+            winPoll2.addstr(1, 5, "Device 1 Mode :      | OFF | JOG | RUN |")
+            winPoll2.addstr(3, 5, "Error Messages : ")
+            winPoll2.refresh()
+            
+            # collect data
+            q = 0
+            key = ""
+
+            while key is not 'w':
+
+                winPoll2.attroff(BLACK_AND_WHITE)     
+                winPoll2.attron(WHITE_AND_GREEN)
+                winPoll2.addstr(1, 5, "Device 1 Mode :      | OFF | JOG | RUN |")
+
+                try:
+                    key = winPoll2.getkey()
+                except:
+                    key = None
+
+                if key is 'a':
+                    if q > 0:
+                        q -= 1
+                        
+                elif key is 'd':
+                    if q < 2:
+                        q += 1
+
+
+                if q is 0:
+                    winPoll2.attroff(WHITE_AND_GREEN)
+                    winPoll2.attron(BLACK_AND_WHITE)
+                    winPoll2.addstr(1, 26, "| OFF |")
+                    poll_user[1] = 0                    # disable the device
+                    
+                elif q is 1:
+                    winPoll2.attroff(WHITE_AND_GREEN)
+                    winPoll2.attron(BLACK_AND_WHITE)
+                    winPoll2.addstr(1, 32, "| JOG |")
+                    poll_user[1] = 1                    # jog the device
+
+                elif q is 2:
+                    winPoll2.attroff(WHITE_AND_GREEN)
+                    winPoll2.attron(BLACK_AND_WHITE)
+                    winPoll2.addstr(1, 38, "| RUN |")
+                    poll_user[1] = 2                    # run the device
+                        
+                
+                winPoll2.refresh()
+                sleep(0.75)
 
         if rollcall[2] > 0:
-            #display window and collect
-            pass
+            # display window
+            winPoll3 = curses.newwin(5, 60, 19, 30)
+            curses.noecho()
+            winPoll3.nodelay(True)
+            winPoll3.clear()
+            winPoll3.attron(WHITE_AND_GREEN)
+            winPoll3.addstr(1, 5, "Device 1 Mode :      | OFF | JOG | RUN |")
+            winPoll3.addstr(3, 5, "Error Messages : ")
+            winPoll3.refresh()
+            
+            # collect data
+            q = 0
+            key = ""
+
+            while key is not 'w':
+
+                winPoll3.attroff(BLACK_AND_WHITE)     
+                winPoll3.attron(WHITE_AND_GREEN)
+                winPoll3.addstr(1, 5, "Device 1 Mode :      | OFF | JOG | RUN |")
+
+                try:
+                    key = winPoll3.getkey()
+                except:
+                    key = None
+
+                if key is 'a':
+                    if q > 0:
+                        q -= 1
+                        
+                elif key is 'd':
+                    if q < 2:
+                        q += 1
+
+
+                if q is 0:
+                    winPoll3.attroff(WHITE_AND_GREEN)
+                    winPoll3.attron(BLACK_AND_WHITE)
+                    winPoll3.addstr(1, 26, "| OFF |")
+                    poll_user[2] = 0                    # disable the device
+                    
+                elif q is 1:
+                    winPoll3.attroff(WHITE_AND_GREEN)
+                    winPoll3.attron(BLACK_AND_WHITE)
+                    winPoll3.addstr(1, 32, "| JOG |")
+                    poll_user[2] = 1                    # jog the device
+
+                elif q is 2:
+                    winPoll3.attroff(WHITE_AND_GREEN)
+                    winPoll3.attron(BLACK_AND_WHITE)
+                    winPoll3.addstr(1, 38, "| RUN |")
+                    poll_user[2] = 2                    # run the device
+                        
+                
+                winPoll3.refresh()
+                sleep(0.75)
+
+        # display window
+            winPoll4 = curses.newwin(1, 46, 25, 35)
+            curses.noecho()
+            winPoll4.nodelay(True)
+            winPoll4.clear()
+            winPoll4.attron(WHITE_AND_GREEN)
+            winPoll4.addstr(0, 18, "| CONFIRM? |")
+            winPoll4.refresh()
+            
+            key = ""
+
+            while key is not 'w':
+
+                try:
+                    key = winPoll3.getkey()
+                except:
+                    key = None
+                
+            winPoll4.refresh()
+            sleep(0.75)
         
+    # Poll metrics for running in START
+    elif reqGUI == DATA:
 
-    elif reqGUI == START:
-        pass
+        # Act if device one is on the bus
+        if rollcall[0] > 0:
 
-    elif reqGUI == JOG:
-        pass
+            # User wants to diable the device (leave in standby - no update)
+            if poll_user[0] == 0:
+                pass
 
-    elif reqGUI == RUN_J:
-        pass
+            # User selected JOG function
+            elif poll_user[0] == 1:
+                winData1 = curses.newwin(5, 60, 5, 30)
+                winData1.attron(WHITE_AND_MAGENTA)
 
-    elif reqGUI == RUN_S:
+
+                winData1.addstr(0, 0, "Volumetric Flow Rate Q [L/s] in [70n, 10u] : ")
+                winData1.refresh()
+                win_data_ret = curses.newwin(1, 10, 5, 76)
+                curses.echo()
+                box = Textbox(win_data_ret)
+                box.edit()
+                q_user[0] = box.gather().strip().replace("\n", "")
+
+
+                winData1.addstr(1, 0, "Syringe Radius in [m] : ")
+                win_data_ret.clear()
+                win_data_ret.mvwin(6,55)
+                winData1.refresh()
+                box.edit()
+                radius_user[0] = box.gather().strip().replace("\n", "")
+
+                winData1.addstr(4, 4, radius_user[0])
+                winData1.refresh()
+                sleep(5)
+
+
+
+
+
+
+        # Act if device two is on the bus
+        if rollcall[1] > 0:
+            #winData2 = curses.newwin(5, 60, 12, 30)
+            pass
+
+
+        # Act if device three is on the bus
+        if rollcall[2] > 0:
+            #winData3 = curses.newwin(5, 60, 19, 30)
+            pass
+
+        winData4 = curses.newwin(1, 46, 25, 35)
+
+    # JOG-RUN metrics
+    elif reqGUI == RUN:
         pass
 
     else:
