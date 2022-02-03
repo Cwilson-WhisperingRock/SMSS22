@@ -30,21 +30,27 @@ class HubMachine(object):
         self.machine.add_transition(trigger = 'REBOOT', source = '*', dest = 'RESET')
 
 # States for GUI
-global FRAME, POLL, START, JOG, RUN_J, RUN_S
+global FRAME, POLL, DATA, RUN
 global reqGUI
-reqGUI = 0x0
 reqGUI = 0x0
 FRAME = 0x0
 POLL = 0x1
-START = 0x2
-JOG = 0x3
-RUN_J = 0x4
-RUN_S = 0x5
+DATA = 0x2
+RUN = 0x3
+
 
 # Data between user-curses-arduino
-global rollcall, poll_user
+global rollcall, poll_user, q_user, radius_user, cap_user
+global hour_user, min_user, sec_user, dir_user
 rollcall = [0, 0, 0]
 poll_user = [0, 0, 0]
+q_user = [0,0,0]
+radius_user = [0,0,0]
+cap_user = [0,0,0]
+hour_user = [0,0,0]
+min_user = [0,0,0]
+sec_user = [0,0,0]
+dir_user = [0,0,0]
 
     
 def main():
@@ -61,7 +67,7 @@ def main():
     rollcall = [1,0,1]
 
     # GUI command codes
-    global FRAME, POLL, START, JOG, RUN_J, RUN_S
+    global FRAME, POLL, DATA, RUN
     global reqGUI
 
     # PI to Arduino command codes
@@ -94,7 +100,8 @@ def main():
 
 
         elif Hub.state == 'DATAPULL' :
-            pass
+            reqGUI = DATA
+            curs(stdscr)
 
         elif Hub.state == 'RUN' :
             pass
@@ -200,9 +207,10 @@ def deviceRollcall(myaddress):
 
 def curs(stdscr):
 
-    global FRAME, POLL, START, JOG, RUN_J, RUN_S
+    global FRAME, POLL, DATA, RUN
     global reqGUI
-    global rollcall
+    global rollcall, poll_user, q_user, radius_user, cap_user
+    global hour_user, min_user, sec_user, dir_user
     
     # Color combinations (ID, foreground, background)
     curses.init_pair(1, curses.COLOR_RED, curses.COLOR_WHITE)
@@ -217,7 +225,8 @@ def curs(stdscr):
     curses.init_pair(4, curses.COLOR_YELLOW, curses.COLOR_CYAN)
     YELLOW_AND_CYAN = curses.color_pair(4)
 
-    
+    curses.init_pair(5, curses.COLOR_WHITE, curses.COLOR_MAGENTA)
+    WHITE_AND_MAGENTA = curses.color_pair(5)
     
 
     # Display background frame
@@ -480,18 +489,39 @@ def curs(stdscr):
             sleep(0.75)
         
     # Poll metrics for running in START
-    elif reqGUI == START:
-        pass
+    elif reqGUI == DATA:
 
-    # Poll metrics for running in JOG
-    elif reqGUI == JOG:
-        pass
+        # Act if device one is on the bus
+        if rollcall[0] > 0:
+
+            # User wants to diable the device (leave in standby - no update)
+            if poll_user[0] == 0:
+                pass
+
+            # User selected JOG function
+            elif poll_user[0] == 1:
+                winData1 = curses.newwin(5, 60, 5, 30)
+                winData1.attron(WHITE_AND_MAGENTA)
+                winData1.refresh()
+
+
+
+
+        # Act if device two is on the bus
+        if rollcall[1] > 0:
+            #winData2 = curses.newwin(5, 60, 12, 30)
+            pass
+
+
+        # Act if device three is on the bus
+        if rollcall[2] > 0:
+            #winData3 = curses.newwin(5, 60, 19, 30)
+            pass
+
+        winData4 = curses.newwin(1, 46, 25, 35)
 
     # JOG-RUN metrics
-    elif reqGUI == RUN_J:
-        pass
-    # START-RUN metrics
-    elif reqGUI == RUN_S:
+    elif reqGUI == RUN:
         pass
 
     else:
