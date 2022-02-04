@@ -8,11 +8,11 @@
 
 
 // Test Variables
-//#define TESTING               // Comment to cancel testing
+#define TESTING               // Comment to cancel testing
 //#define SERIAL_COMMS          // Comment to cancel serial comms [manual testing]
 #define I2C_COMMS               // Comment to cancel I2C comms
-//#define ard_nano_uno            // Using nano/uno board 
-#define ard_micro               // Using micro board
+#define ard_nano_uno            // Using nano/uno board 
+//#define ard_micro               // Using micro board
 
 
 // State machine 
@@ -104,19 +104,42 @@ unsigned long time_stamp_start = 0;         // time keeping
 unsigned long time_stamp_end = 0;           // "
 
 
-// Serial/I2C Variables
-char receivedChar;                          // pool for char data
-boolean newData_char = false;               // true if new char data is RX 
-boolean newData_str = false;                // true if new str data is RX 
-const byte numChars = 32;                   // str length when TX 
-char receivedChars[numChars];               // pool for str data 
-bool displayed = false;                     // true if graphic is displayed 
+// Serial Variables
+#ifdef SERIAL_COMMS
+  char receivedChar;                          // pool for char data
+  boolean newData_char = false;               // true if new char data is RX 
+  boolean newData_str = false;                // true if new str data is RX 
+  const byte numChars = 32;                   // str length when TX 
+  char receivedChars[numChars];               // pool for str data 
+  bool displayed = false;                     // true if graphic is displayed 
+#endif
 
-#define PI_ADD 0x01                         // Pi address
-#define ARD_ADD_1 0x14                      // Arduino #1
-#define ARD_ADD_2 0x28                      // Arduino #2
-#define ARD_ADD_3 0x42                      // Arduino #3
+// I2C Variables
+#ifdef I2C_COMMS
 
+  // I2C Addresses
+  #define PI_ADD 0x01                         // Pi address
+  #define ARD_ADD_1 0x14                      // Arduino #1
+  #define ARD_ADD_2 0x28                      // Arduino #2
+  #define ARD_ADD_3 0x42                      // Arduino #3
+
+  // Pi's Tx of [dictating codes, corresponding data]
+    // Dictating codes 
+    #define POLLDATA 1                        // Ard will rec[OFF, JOG, START] 
+    #define Q_DATA 2                          // Ard will rec[q_user]
+    #define R_DATA 3                          // Ard will rec[syr_radius_user]
+    #define CAP_DATA 4                        // Ard will rec[syr_capacity]
+    #define DUR_DATA 5                        // Ard will rec[hour_user, min_user, sec_user]
+    #define DIR_DATA 6                        // Ard will rec[DIRECTION]
+    #define FEEDBACK 7                        // Pi is requesting feedback str for error messages
+    unsigned int recData = 0;
+    char strRX[200];
+
+    // I2C Variables
+    char poll_user = 0;                       // run state of the ard [OFF(0), JOG(1), START(2)]
+    
+  
+#endif
 
 
 void setup() {
@@ -125,8 +148,12 @@ void setup() {
   Serial.begin(9600);                           // Serial comms init
   #endif
 
+  #ifdef TESTING
+  Serial.begin(9600);                           // Serial comms init
+  #endif
+
   #ifdef I2C_COMMS
-  Wire.begin(ARD_ADD_3);                        // I2C bus logon with sub address
+  Wire.begin(ARD_ADD_2);                        // I2C bus logon with sub address
   Wire.onReceive(recvEvent);                    // run recvEvent on a main write to read <-
   Wire.onRequest(reqEvent);                     // run reqEvent on a main read to write ->
   #endif
@@ -146,7 +173,14 @@ void setup() {
 }
 
 void loop() {
-  state_machine();
+  
+  #ifdef SERIAL_COMMS
+    serial_state_machine();
+  #endif
+
+  #ifdef I2C_COMMS
+    i2c_state_machine();
+  #endif
 }
 
 
@@ -301,54 +335,48 @@ double MicroCali( float frequency ){
 
 
 
-
-/* ~~~~~~~~~~~~~~~~~~~~~~~~ state_machine() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#ifdef SERIAL_COMMS
+/* ~~~~~~~~~~~~~~~~~~~~~~~~ serial_state_machine() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  *  Purpose : Control the flow of the motor controller 
- *  Input : User input signals
+ *  Input : Serial user input signals
  *  Output : 
  */
- void state_machine(){
+ void serial_state_machine(){
   
   switch(state){
-
-    
     
     case STANDBY:
 
     digitalWrite(YELLOW, HIGH);         // LED indicator
 
-    
-        #ifdef SERIAL_COMMS
+        if(displayed == false){                                           // dont print unless its the first
+        Serial.println(" ~~~~~~~~~~~~Standby Mode~~~~~~~~~~~ ");
+        Serial.println(" Press S for START mode or J for JOG (No line ending) \n\n\n\n");
+        displayed = true;
+        }
         
-            if(displayed == false){                                           // dont print unless its the first
-            Serial.println(" ~~~~~~~~~~~~Standby Mode~~~~~~~~~~~ ");
-            Serial.println(" Press S for START mode or J for JOG (No line ending) \n\n\n\n");
-            displayed = true;
-            }
-            
-            recvOneChar();
+        recvOneChar();
            
-        #endif
 
-            if (receivedChar == START){                               // User selects START for normal use
-              
-              #ifdef SERIAL_COMMS
-              displayed = false;                                      //graphic already displayed...no more pls
-              #endif
+        if (receivedChar == START){                               // User selects START for normal use
+          
+          #ifdef SERIAL_COMMS
+          displayed = false;                                      //graphic already displayed...no more pls
+          #endif
 
-              digitalWrite(YELLOW, LOW);                             // LED indicator
-              state = DATAPULL_S;}  
-                        
-            else if(receivedChar == JOG){                              // User selects JOG to jog motor
-              
-              #ifdef SERIAL_COMMS
-              displayed = false;
-              #endif
-              
-              digitalWrite(YELLOW, LOW);                             // LED indicator
-              state = DATAPULL_J;}
-                      
-            else{state = STANDBY;}                                     // Or wait until user chooses
+          digitalWrite(YELLOW, LOW);                             // LED indicator
+          state = DATAPULL_S;}  
+                    
+        else if(receivedChar == JOG){                              // User selects JOG to jog motor
+          
+          #ifdef SERIAL_COMMS
+          displayed = false;
+          #endif
+          
+          digitalWrite(YELLOW, LOW);                             // LED indicator
+          state = DATAPULL_J;}
+                  
+        else{state = STANDBY;}                                     // Or wait until user chooses
                                                                            
       
         break;
@@ -357,77 +385,75 @@ double MicroCali( float frequency ){
 
         digitalWrite(BLUE, HIGH);                             // LED indicator
 
-        #ifdef SERIAL_COMMS
-            Serial.println(" ~~~~~~~~~~DATAPULL_S~~~~~~~~~ ");
-            Serial.println(" What is the fluid capacity of the syringe[mL]? (newline)");
-            while(newData_str == false){recvWithEndMarker();}                                                     
-            syr_capacity = userString2Float();
-            
-            Serial.println(" What is the radius of the syringe plunger[m]? (newline)");
-            while(newData_str == false){recvWithEndMarker();}
-            syr_radius_user = userString2Float();
-            
-            Serial.println(" What is the requested volumetric flow rate Q [L/s] ? Range [69n , 10u] (newline)");
-            while(newData_str == false){recvWithEndMarker();}
-            q_user = userString2Float();
-            
-            Serial.println(" Duration hours? (newline)");
-            while(newData_str == false){recvWithEndMarker();}
-            hour_user = userString2Float();
-            
-            Serial.println(" Duration minutes? (newline)");
-            while(newData_str == false){recvWithEndMarker();}
-            min_user = userString2Float();
-            
-            Serial.println(" Duration seconds? (newline)");
-            while(newData_str == false){recvWithEndMarker();}
-            sec_user = userString2Float();
-            
-            Serial.println(" Direction? F for forward, R for reverse, or B to back to Standby (No line end)");
-            newData_char = false;
-            while(newData_char == false){recvOneChar();}
-            if( receivedChar == 'R'){
-              DIRECTION = REVERSE; 
+        Serial.println(" ~~~~~~~~~~DATAPULL_S~~~~~~~~~ ");
+        Serial.println(" What is the fluid capacity of the syringe[mL]? (newline)");
+        while(newData_str == false){recvWithEndMarker();}                                                     
+        syr_capacity = userString2Float();
+        
+        Serial.println(" What is the radius of the syringe plunger[m]? (newline)");
+        while(newData_str == false){recvWithEndMarker();}
+        syr_radius_user = userString2Float();
+        
+        Serial.println(" What is the requested volumetric flow rate Q [L/s] ? Range [69n , 10u] (newline)");
+        while(newData_str == false){recvWithEndMarker();}
+        q_user = userString2Float();
+        
+        Serial.println(" Duration hours? (newline)");
+        while(newData_str == false){recvWithEndMarker();}
+        hour_user = userString2Float();
+        
+        Serial.println(" Duration minutes? (newline)");
+        while(newData_str == false){recvWithEndMarker();}
+        min_user = userString2Float();
+        
+        Serial.println(" Duration seconds? (newline)");
+        while(newData_str == false){recvWithEndMarker();}
+        sec_user = userString2Float();
+        
+        Serial.println(" Direction? F for forward, R for reverse, or B to back to Standby (No line end)");
+        newData_char = false;
+        while(newData_char == false){recvOneChar();}
+        if( receivedChar == 'R'){
+          DIRECTION = REVERSE; 
 
-              #ifdef TESTING
-                  Serial.println(" Capacity, raduis, Q, hour, min, sec, Dir ");
-                  Serial.print(syr_capacity); 
-                  Serial.print(", ");
-                  Serial.print(syr_radius_user, 8);
-                  Serial.print(", ");
-                  Serial.print(q_user, 10);
-                  Serial.print(", ");
-                  Serial.print(hour_user);
-                  Serial.print(", ");
-                  Serial.print(min_user);
-                  Serial.print(", ");
-                  Serial.print(sec_user);
-                  Serial.print(", ");
-                  Serial.println("Reverse\n\n");
-              #endif
-              }
-            else if( receivedChar == 'F'){
-              DIRECTION = FORWARD;
-              
-              #ifdef TESTING
-                  Serial.println(" Capacity, raduis, Q, hour, min, sec, Dir ");
-                  Serial.print(syr_capacity); 
-                  Serial.print(", ");
-                  Serial.print(syr_radius_user, 8);
-                  Serial.print(", ");
-                  Serial.print(q_user, 10);
-                  Serial.print(", ");
-                  Serial.print(hour_user);
-                  Serial.print(", ");
-                  Serial.print(min_user);
-                  Serial.print(", ");
-                  Serial.print(sec_user);
-                  Serial.print(", ");
-                  Serial.println("Forward\n\n");
-              #endif
-              
-              }
-        #endif
+          #ifdef TESTING
+              Serial.println(" Capacity, raduis, Q, hour, min, sec, Dir ");
+              Serial.print(syr_capacity); 
+              Serial.print(", ");
+              Serial.print(syr_radius_user, 8);
+              Serial.print(", ");
+              Serial.print(q_user, 10);
+              Serial.print(", ");
+              Serial.print(hour_user);
+              Serial.print(", ");
+              Serial.print(min_user);
+              Serial.print(", ");
+              Serial.print(sec_user);
+              Serial.print(", ");
+              Serial.println("Reverse\n\n");
+          #endif
+          }
+        else if( receivedChar == 'F'){
+          DIRECTION = FORWARD;
+          
+          #ifdef TESTING
+              Serial.println(" Capacity, raduis, Q, hour, min, sec, Dir ");
+              Serial.print(syr_capacity); 
+              Serial.print(", ");
+              Serial.print(syr_radius_user, 8);
+              Serial.print(", ");
+              Serial.print(q_user, 10);
+              Serial.print(", ");
+              Serial.print(hour_user);
+              Serial.print(", ");
+              Serial.print(min_user);
+              Serial.print(", ");
+              Serial.print(sec_user);
+              Serial.print(", ");
+              Serial.println("Forward\n\n");
+          #endif
+          
+          }
 
         duration = ( (3600 * hour_user) + (60 * min_user) + sec_user) * 1000;   // entire duration in msec for easy compare later
         
@@ -453,52 +479,44 @@ double MicroCali( float frequency ){
         digitalWrite(BLUE, HIGH);                                               // LED indicator
         digitalWrite(WHITE, HIGH);                                              // LED indicator
         
-        #ifdef SERIAL_COMMS
-            
-            Serial.println(" \n\n\n\n~~~~~~~~~~DATAPULL_JOG~~~~~~~~~ ");
-            Serial.println(" What is the radius of the syringe plunger [m]? (newline)");
-            while(newData_str == false){recvWithEndMarker();}                                                     
-            syr_radius_user = userString2Float();
-            
-            Serial.println(" What is the requested volumetric flow rate (Q) ? Range [69n , 10u] L/s (newline)");
-            while(newData_str == false){recvWithEndMarker();} 
-            q_user = userString2Float();
-            
-            Serial.println(" Direction? F for forward, R for reverse, or B to back to Standby (No line ending)");
-            newData_char = false;
-            while(newData_char == false){recvOneChar();}
-            if( receivedChar == 'R'){DIRECTION = REVERSE; }
-            else if( receivedChar == 'F'){DIRECTION = FORWARD;} 
-        #endif
-
-          
+        Serial.println(" \n\n\n\n~~~~~~~~~~DATAPULL_JOG~~~~~~~~~ ");
+        Serial.println(" What is the radius of the syringe plunger [m]? (newline)");
+        while(newData_str == false){recvWithEndMarker();}                                                     
+        syr_radius_user = userString2Float();
+        
+        Serial.println(" What is the requested volumetric flow rate (Q) ? Range [69n , 10u] L/s (newline)");
+        while(newData_str == false){recvWithEndMarker();} 
+        q_user = userString2Float();
+        
+        Serial.println(" Direction? F for forward, R for reverse, or B to back to Standby (No line ending)");
+        newData_char = false;
+        while(newData_char == false){recvOneChar();}
+        if( receivedChar == 'R'){DIRECTION = REVERSE; }
+        else if( receivedChar == 'F'){DIRECTION = FORWARD;} 
               
         freq =  Q_to_Freq(q_user, syr_radius_user);                             // Get period from Q
 
         #ifdef TESTING
-                  Serial.println("radius, Q, freq ");
-                  Serial.print(syr_radius_user, 8);
-                  Serial.print(", ");
-                  Serial.print(q_user, 10);
-                  Serial.print(", ");
-                  Serial.println(freq);
-          #endif
+            Serial.println("radius, Q, freq ");
+            Serial.print(syr_radius_user, 8);
+            Serial.print(", ");
+            Serial.print(q_user, 10);
+            Serial.print(", ");
+            Serial.println(freq);
+        #endif
 
-          
         freq = MicroCali(freq);                                                 // Calibrate microstepping & TICKET validation
 
-
         #ifdef TESTING
-                  Serial.println("radius, Q, freq ");
-                  Serial.print(syr_radius_user, 8);
-                  Serial.print(", ");
-                  Serial.print(q_user, 10);
-                  Serial.print(", ");
-                  Serial.println(freq);
+            Serial.println("radius, Q, freq ");
+            Serial.print(syr_radius_user, 8);
+            Serial.print(", ");
+            Serial.print(q_user, 10);
+            Serial.print(", ");
+            Serial.println(freq);
 
-          #endif
+        #endif
 
-          
         if(receivedChar == BACK){                                               // User requests to go back
               //reset metrics and go back
               freq = 0;
@@ -506,10 +524,12 @@ double MicroCali( float frequency ){
               digitalWrite(WHITE, LOW);                                              // LED indicator
               state = STANDBY;
         }
+        
         else if(TICKET == true){
           digitalWrite(BLUE, LOW);                                               // LED indicator
           digitalWrite(WHITE, LOW);                                              // LED indicator
           state = RUN_J;}                                                       // Valid data, move forward
+        
         else{state = DATAPULL_J;}                                               // Repeat if the data wasnt RX/right
         
         break;
@@ -521,14 +541,13 @@ double MicroCali( float frequency ){
         digitalWrite(WHITE, HIGH);                                              // LED indicator
         
         // Allowing arduino to roam through cycles and not wait for user input while running
-        #ifdef SERIAL_COMMS
-            if(displayed == false){
-              Serial.println(" ~~~~~~~~~~~~ Run_JOG ~~~~~~~~~~~ ");
-              Serial.println(" Press E for ESTOP (No line ending)");
-              displayed = true;
-            }
-            recvOneChar();
-        #endif
+        if(displayed == false){
+          Serial.println(" ~~~~~~~~~~~~ Run_JOG ~~~~~~~~~~~ ");
+          Serial.println(" Press E for ESTOP (No line ending)");
+          displayed = true;
+        }
+        
+        recvOneChar();
         
         if(receivedChar == ESTOP){
             digitalWrite(GREEN, LOW);                                               // LED indicator
@@ -554,23 +573,19 @@ double MicroCali( float frequency ){
 
 
     case RUN_S:
-     digitalWrite(GREEN, HIGH);                                               // LED indicator
-
-
-        #ifdef SERIAL_COMMS
-            if(displayed == false){
-              Serial.println(" ~~~~~~~~~~~~ Run_START ~~~~~~~~~~~ ");
-              Serial.println(" Press E for ESTOP (No line ending)\n\n\n\n");
-              displayed = true;
-            }
-            recvOneChar();
-        #endif
+    
+       digitalWrite(GREEN, HIGH);                                               // LED indicator
+  
+        if(displayed == false){
+          Serial.println(" ~~~~~~~~~~~~ Run_START ~~~~~~~~~~~ ");
+          Serial.println(" Press E for ESTOP (No line ending)\n\n\n\n");
+          displayed = true;
+        }
+        
+        recvOneChar();
         
         if(receivedChar == ESTOP || FINISH == true){
-          
-            #ifdef SERIAL_COMMS
-              displayed = false;
-            #endif
+            displayed = false;
             digitalWrite(GREEN, LOW);                                               // LED indicator
             state = STOP;
         }
@@ -591,11 +606,8 @@ double MicroCali( float frequency ){
 
           time_stamp_end = millis();
           time_stamp_end = time_stamp_end - time_stamp_start;       // total elapsed time
-          
           if( time_stamp_end >= duration){ FINISH = true;}          // if time had reached user's request
-        
-        
-        state = RUN_S;
+          state = RUN_S;
         }
         
         break;
@@ -620,75 +632,180 @@ double MicroCali( float frequency ){
     
   }
  }
+#endif
 
 
-
-
-/*~~~~~~~~~~~~~~~~~~~~~~~~~ recvOneChar() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
- * Purpose : Receive one char from the user
- * Input : serial
- * Output : [global] newData
+#ifdef I2C_COMMS
+ /* ~~~~~~~~~~~~~~~~~~~~~~~~ i2c_state_machine() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ *  Purpose : Control the flow of the motor controller 
+ *  Input : I2C user input signals
+ *  Output : 
  */
-void recvOneChar() {
-    if (Serial.available() > 0) {
-        receivedChar = Serial.read();
-        newData_char = true;
-    }
-}
-
-
-
-
-/*~~~~~~~~~~~~~~~~~~~~~~~~ recvWithEndMarker() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
- * Purpose : Receive set of char (up to 32) from the user
- * Input : serial
- * Output : [global] receivedChars[]
- */
-void recvWithEndMarker() {
-    static byte ndx = 0;
-    char endMarker = '\n';
-    char rc;
- 
-    
-    while (Serial.available() > 0 && newData_str == false) {
-        rc = Serial.read();
-
-        if (rc != endMarker) {
-            receivedChars[ndx] = rc;
-            ndx++;
-            if (ndx >= numChars) {
-                ndx = numChars - 1;
-            }
-        }
-        else {
-            receivedChars[ndx] = '\0'; // terminate the string
-            ndx = 0;
-            newData_str = true;
-        }
-    }
+ void i2c_state_machine(){
+  
+  switch(state){
 
     
-}
+    
+    case STANDBY:
+
+        digitalWrite(YELLOW, HIGH);         // LED indicator
+      
+        if (poll_user == 2){                               // User selects START for normal use
+          digitalWrite(YELLOW, LOW);                             // LED indicator
+          state = DATAPULL_S;
+          }  
+                    
+        else if(poll_user == 1){                              // User selects JOG to jog motor
+          digitalWrite(YELLOW, LOW);                             // LED indicator
+          state = DATAPULL_J;
+          }
+                  
+        else{
+          #ifdef TESTING
+          Serial.println(recData);
+          delay(100);
+          #endif
+          state = STANDBY;}                                     // Or wait until user chooses
+        break;
+
+    case DATAPULL_S:
+
+        digitalWrite(BLUE, HIGH);                             // LED indicator
+
+        
+        duration = ( (3600 * hour_user) + (60 * min_user) + sec_user) * 1000;   // entire duration in msec for easy compare later
+        
+        freq =  Q_to_Freq(q_user, syr_radius_user);                             // Get period from Q
+        freq = MicroCali(freq);                                                 // Calibrate for microstepping + TICKET
+      
+        if(duration == 0){TICKET = false;}
+        else if(TICKET == true){validDur_Start(q_user, syr_capacity, duration);}     // final TICKET confirm duration 
+
+        /*
+        if(receivedChar == BACK){
+          digitalWrite(BLUE, LOW);                                              // LED indicator
+          state = STANDBY;}                                                     // User requests to go back
+        else if(TICKET){                                                        // Must lie within Q and duration range
+          digitalWrite(BLUE, LOW);                                               // LED indicator
+          init_control(step_config);                                            // Calibrate controller
+          state = RUN_S;}                                                       // Valid data, move forward
+        else{state = DATAPULL_S;}                                               // Repeat if the data wasnt RX/right
+        */
+        break;
 
 
+    case DATAPULL_J:
+        digitalWrite(BLUE, HIGH);                                               // LED indicator
+        digitalWrite(WHITE, HIGH);                                              // LED indicator
+                      
+        freq =  Q_to_Freq(q_user, syr_radius_user);                             // Get period from Q
+          
+        freq = MicroCali(freq);                                                 // Calibrate microstepping & TICKET validation
+
+        /*
+        if(receivedChar == BACK){                                               // User requests to go back
+              //reset metrics and go back
+              freq = 0;
+              digitalWrite(BLUE, LOW);                                               // LED indicator
+              digitalWrite(WHITE, LOW);                                              // LED indicator
+              state = STANDBY;
+        }
+        else if(TICKET == true){
+          digitalWrite(BLUE, LOW);                                               // LED indicator
+          digitalWrite(WHITE, LOW);                                              // LED indicator
+          state = RUN_J;}                                                       // Valid data, move forward
+        else{state = DATAPULL_J;}                                               // Repeat if the data wasnt RX/right
+        */
+        
+        break;
 
 
-/*~~~~~~~~~~~~~~~~~~~~~~~ userString2Float() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
- * Purpose : convert recvWithEndMarker's output array of char receivedChars[ndx] to float & continues data flow 
- * Input : [global] char receivedChars[]
- * Output : float 
- */
-float userString2Float(){
- if (newData_str == true) {
-    String user_str;
-    user_str = String(receivedChars);
-    newData_str = false;
-    return user_str.toFloat();
+    case RUN_J:
+
+        digitalWrite(GREEN, HIGH);                                               // LED indicator
+        digitalWrite(WHITE, HIGH);                                              // LED indicator
+
+        /*
+        if(receivedChar == ESTOP){
+            digitalWrite(GREEN, LOW);                                               // LED indicator
+            digitalWrite(WHITE, LOW);                                              // LED indicator
+            state = STOP;
+        }
+        
+        else if (RUNNING == false){
+            init_control(step_config);                              // setup motor controller
+            digitalWrite(DIR, DIRECTION);                           // rewrite DIR pin for direction
+            Timer1.initialize((1/freq) * 1000000);                  // Init PWM freq[microsec] (mult to conv to usec)
+            Timer1.pwm(STEP, DC);                                   // Start motor  
+            RUNNING = true;
+            state = RUN_J;
+        }
+        
+        else{state = RUN_J;}
+
+        */
+          
+        break;
+
+
+    case RUN_S:
+    
+      digitalWrite(GREEN, HIGH);                                               // LED indicator
+
+      /*
+      if(receivedChar == ESTOP || FINISH == true){
+          digitalWrite(GREEN, LOW);                                               // LED indicator
+          state = STOP;
+      }
+  
+      // init run of motor
+      else if (RUNNING == false){
+          init_control(step_config);                              // setup motor controller
+          digitalWrite(DIR, DIRECTION);                           // rewrite DIR pin for direction
+          Timer1.initialize((1/freq) * 1000000);                  // Init PWM freq[microsec] (mult to conv to usec)
+          time_stamp_start = millis();                            // Start recording time
+          Timer1.pwm(STEP, DC);                                   // Start motor  
+          RUNNING = true;
+          state = RUN_S;
+      }
+  
+      // Running until final time
+      else{
+  
+        time_stamp_end = millis();
+        time_stamp_end = time_stamp_end - time_stamp_start;       // total elapsed time
+        if( time_stamp_end >= duration){ FINISH = true;}          // if time had reached user's request
+        state = RUN_S;
+      }
+      */
+        
+      break;
+
+    case STOP:
+        Timer1.disablePwm(STEP);                                             // turn off motor
+        RUNNING = false;
+        TICKET = false;
+        FINISH = false;
+        q_user = 0;                                                   // clear user variables
+        syr_radius_user = 0;
+        freq = 0;
+        duration = 0; 
+        poll_user = 0;
+        state = STANDBY;
+        break;
+
+    default:
+        state = STOP;
+        break;
+
+    
+  }
  }
-}
 
+#endif
 
-
+  
 /* ~~~~~~~~~~~~~~~~~~~~~~~~ validDur_Start() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  *  Purpose : Confirm volumetric flow rate x duration wont exceed the syringe capacity 
  *  Input : [global]   q_user, syr_capacity, duration
@@ -701,23 +818,180 @@ void validDur_Start(float Q,float Vol, unsigned int Time){
 
 
 
-/* ~~~~~~~~~~~~~~~~~~~~~~~~ recvEvent() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
- *  Purpose : Read the incoming data from main's request
- *  Input : 
- *  Output : 
- */
-void recvEvent(int numBytes_TX){
-  int x = 0;
-  x = Wire.read();  
-}
+
+#ifdef SERIAL_COMMS
+
+  /*~~~~~~~~~~~~~~~~~~~~~~~~~ recvOneChar() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   * Purpose : Receive one char from the user
+   * Input : serial
+   * Output : [global] newData
+   */
+  void recvOneChar() {
+      if (Serial.available() > 0) {
+          receivedChar = Serial.read();
+          newData_char = true;
+      }
+  }
+  
+  
+  
+  
+  /*~~~~~~~~~~~~~~~~~~~~~~~~ recvWithEndMarker() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   * Purpose : Receive set of char (up to 32) from the user
+   * Input : serial
+   * Output : [global] receivedChars[]
+   */
+  void recvWithEndMarker() {
+      static byte ndx = 0;
+      char endMarker = '\n';
+      char rc;
+   
+      
+      while (Serial.available() > 0 && newData_str == false) {
+          rc = Serial.read();
+  
+          if (rc != endMarker) {
+              receivedChars[ndx] = rc;
+              ndx++;
+              if (ndx >= numChars) {
+                  ndx = numChars - 1;
+              }
+          }
+          else {
+              receivedChars[ndx] = '\0'; // terminate the string
+              ndx = 0;
+              newData_str = true;
+          }
+      }
+  
+      
+  }
+  
+  
+  
+  
+  /*~~~~~~~~~~~~~~~~~~~~~~~ userString2Float() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   * Purpose : convert recvWithEndMarker's output array of char receivedChars[ndx] to float & continues data flow 
+   * Input : [global] char receivedChars[]
+   * Output : float 
+   */
+  float userString2Float(){
+   if (newData_str == true) {
+      String user_str;
+      user_str = String(receivedChars);
+      newData_str = false;
+      return user_str.toFloat();
+   }
+  }
+  
+  
+
+#endif
+
+
+#ifdef I2C_COMMS
+
+  /* ~~~~~~~~~~~~~~~~~~~~~~~~ recvEvent() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   *  Purpose : Read the incoming data from main's request
+   *  Input : 
+   *  Output : 
+   */
+  void recvEvent(int numBytes_TX){
+
+    #ifdef TESTING
+    Serial.println("RX");
+    #endif
+    
+    int index = 0;
+    
+      
+    if (recData == 0){
+      recData = Wire.read();
+    }
+
+  
+    else{
+      
+      switch(recData){
+
+          #ifdef TESTING
+          Serial.println("switch");
+          #endif
+        
+          case POLLDATA:
+            while(Wire.available() > 0){        //read data
+              strRX[index] = Wire.read();
+              index++;
+              }
+              
+            poll_user = strRX[0];             // transfer RX data
+            recData = 0;                      //reset RX flag
+            break;
+  
+          case Q_DATA:
+            while(Wire.available() > 0){        //read data
+              strRX[index] = Wire.read();
+              index++;
+              }
+             
+            q_user = String(strRX).toFloat();             // transfer RX data
+            recData = 0;
+            break;
+  
+          case R_DATA:
+            while(Wire.available() > 0){        //read data
+              strRX[index] = Wire.read();
+              index++;
+              }
+             
+            syr_radius_user = String(strRX).toFloat();             // transfer RX data
+            recData = 0;
+            break;
+  
+          case CAP_DATA:
+            while(Wire.available() > 0){        //read data
+              strRX[index] = Wire.read();
+              index++;
+              }
+             
+            syr_capacity = String(strRX).toInt();             // transfer RX data
+            recData = 0;
+            break;
+  
+          case DUR_DATA:
+          
+            recData = 0;
+            break;
+  
+          case DIR_DATA:
+          
+            recData = 0;
+            break;
+  
+          case FEEDBACK:
+          
+            recData = 0;
+            break;
+  
+          default:
+            recData = 0;
+            break;
+      }
+    }
+
+  }
+  
+  
+  
+  /* ~~~~~~~~~~~~~~~~~~~~~~~~ reqEvent() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   *  Purpose : Write data to main at its request
+   *  Input : 
+   *  Output : 
+   */
+  void reqEvent(){
+    Wire.write(4);
+  }
 
 
 
-/* ~~~~~~~~~~~~~~~~~~~~~~~~ reqEvent() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
- *  Purpose : Write data to main at its request
- *  Input : 
- *  Output : 
- */
-void reqEvent(){
-  Wire.write(4);
-}
+#endif
