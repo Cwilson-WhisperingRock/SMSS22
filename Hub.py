@@ -3,7 +3,7 @@
 # SMSS Hub Controller V1.0
 
 
-from smbus2 import SMBus, i2c_msg        # I2C library
+#from smbus2 import SMBus, i2c_msg        # I2C library
 from time import sleep                   # python delay
 
 from transitions import Machine          # state machine
@@ -50,7 +50,7 @@ cap_user = [0,0,0]
 hour_user = [0,0,0]
 min_user = [0,0,0]
 sec_user = [0,0,0]
-dir_user = [0,0,0]
+dir_user = [0,0,0]                                              # 0 - REV, 1 - FWD 
 
     
 def main():
@@ -73,7 +73,7 @@ def main():
 
     #availability of arduino deivces 0 = false, 1 = true
     global rollcall
-    rollcall = [0,0,0]
+    rollcall = [1,1,1]
 
     # GUI command codes
     global FRAME, POLL, DATA, RUN
@@ -90,7 +90,7 @@ def main():
         if Hub.state == 'START' :
 
             #Identify devices on the buffer
-            rollcall = deviceRollcall(address)
+            #rollcall = deviceRollcall(address)
             sleep(1)
 
             #Display GUI background frame
@@ -102,9 +102,9 @@ def main():
             curs(stdscr)
 
             # Write dictation code + poll_user
-            for i in range(2):
-                if rollcall[i] > 0:
-                    transmit_block(address[i], POLLDATA, poll_user[i] )
+            #for i in range(2):
+            #    if rollcall[i] > 0:
+            #        transmit_block(address[i], POLLDATA, poll_user[i] )
             
             # Change states to DATAPULL
             Hub.CONFIRM()
@@ -293,7 +293,6 @@ def curs(stdscr):
         
     # Poll user for device run modes
     elif reqGUI == POLL:
-        x = 0
 
         if rollcall[0] > 0:
             # display window
@@ -350,9 +349,7 @@ def curs(stdscr):
                         
                 
                 winPoll1.refresh()
-                sleep(0.75)
-
-
+                sleep(0.5)
 
         if rollcall[1] > 0:
             # display window
@@ -409,7 +406,7 @@ def curs(stdscr):
                         
                 
                 winPoll2.refresh()
-                sleep(0.75)
+                sleep(0.5)
 
         if rollcall[2] > 0:
             # display window
@@ -466,28 +463,28 @@ def curs(stdscr):
                         
                 
                 winPoll3.refresh()
-                sleep(0.75)
+                sleep(0.5)
 
         # display window
-            winPoll4 = curses.newwin(1, 46, 25, 35)
-            curses.noecho()
-            winPoll4.nodelay(True)
-            winPoll4.clear()
-            winPoll4.attron(WHITE_AND_GREEN)
-            winPoll4.addstr(0, 18, "| CONFIRM? |")
-            winPoll4.refresh()
+        winPoll4 = curses.newwin(1, 46, 25, 35)
+        curses.noecho()
+        winPoll4.nodelay(True)
+        winPoll4.clear()
+        winPoll4.attron(WHITE_AND_GREEN)
+        winPoll4.addstr(0, 18, "| CONFIRM? |")
+        winPoll4.refresh()
             
-            key = ""
+        key = ""
 
-            while key != 'w':
+        while key != 'w':
 
-                try:
-                    key = winPoll3.getkey()
-                except:
-                    key = None
+            try:
+                key = winPoll3.getkey()
+            except:
+                key = None
                 
-            winPoll4.refresh()
-            sleep(0.75)
+        winPoll4.refresh()
+        sleep(0.5)
         
     # Poll metrics for running in START
     elif reqGUI == DATA:
@@ -495,7 +492,7 @@ def curs(stdscr):
         # Act if device one is on the bus
         if rollcall[0] > 0:
 
-            # User wants to diable the device (leave in standby - no update)
+            # User wants to disable the device (leave in standby - no update)
             if poll_user[0] == 0:
                 pass
 
@@ -521,25 +518,478 @@ def curs(stdscr):
                 box.edit()
                 radius_user[0] = box.gather().strip().replace("\n", "")
 
-                winData1.addstr(4, 4, radius_user[0])
+
+                winData1.addstr(2, 0, "Direction ?        | FWD | REV | ? ")
+                win_data_ret.clear()
                 winData1.refresh()
-                sleep(5)
+
+                winData1.attroff(WHITE_AND_MAGENTA)     
+                winData1.attron(WHITE_AND_GREEN)
+
+                            # collect data
+                curses.noecho()
+                winData1.nodelay(True)
+                q = 0
+                key = ""
+                while key != 'w':
+                    try:
+                        key = winData1.getkey()
+                    except:
+                        key = None
+
+                    if key == 'a':
+                        if q > 0:
+                            q -= 1
+                        
+                    elif key == 'd':
+                        if q < 1:
+                            q += 1
+
+                    winData1.attroff(WHITE_AND_GREEN)     
+                    winData1.attron(WHITE_AND_MAGENTA)
+                    winData1.addstr(2, 0, "Direction ?        | FWD | REV | ? ")
+                    winData1.attroff(WHITE_AND_MAGENTA)     
+                    winData1.attron(WHITE_AND_GREEN)
+
+                    if q == 0:
+                        winData1.addstr(2, 19, "| FWD |")
+                        dir_user[0] = 1                         
+                    
+                    elif q == 1:
+                        winData1.addstr(2, 25, "| REV |")
+                        dir_user[0] = 0                    
+
+                    winData1.refresh()
+                    sleep(0.75)
+
+            # User sel RUN function
+            elif poll_user[0] == 2:
+
+                winData1 = curses.newwin(5, 60, 5, 30)
+                winData1.attron(WHITE_AND_MAGENTA)
 
 
+                winData1.addstr(0, 0, "Volumetric Flow Rate Q [L/s] in [70n, 10u] : ")
+                winData1.refresh()
+                win_data_ret = curses.newwin(1, 10, 5, 76)
+                curses.echo()
+                box = Textbox(win_data_ret)
+                box.edit()
+                q_user[0] = box.gather().strip().replace("\n", "")
 
 
+                winData1.addstr(1, 0, "Syringe Radius in [m] : ")
+                win_data_ret.clear()
+                win_data_ret.mvwin(6,55)
+                winData1.refresh()
+                box.edit()
+                radius_user[0] = box.gather().strip().replace("\n", "")
 
+                winData1.addstr(2, 0, "Syringe Capacity in [mL] : ")
+                win_data_ret.clear()
+                win_data_ret.mvwin(7,58)
+                winData1.refresh()
+                box.edit()
+                cap_user[0] = box.gather().strip().replace("\n", "")
+
+                winData1.addstr(3, 0, "Hour # : ")
+                win_data_ret.clear()
+                win_data_ret.mvwin(8,40)
+                winData1.refresh()
+                box.edit()
+                hour_user[0] = box.gather().strip().replace("\n", "")
+
+                winData1.addstr(3, 16, "Minute # : ")
+                win_data_ret.clear()
+                win_data_ret.mvwin(8,58)
+                winData1.refresh()
+                box.edit()
+                min_user[0] = box.gather().strip().replace("\n", "")
+
+                winData1.addstr(3, 35, "Second # : ")
+                win_data_ret.clear()
+                win_data_ret.mvwin(8,77)
+                winData1.refresh()
+                box.edit()
+                sec_user[0] = box.gather().strip().replace("\n", "")
+
+
+                winData1.addstr(4, 0, "Direction ?        | FWD | REV | ? ")
+                win_data_ret.clear()
+                winData1.refresh()
+
+                winData1.attroff(WHITE_AND_MAGENTA)     
+                winData1.attron(WHITE_AND_GREEN)
+
+                            # collect data
+                curses.noecho()
+                winData1.nodelay(True)
+                q = 0
+                key = ""
+                while key != 'w':
+                    try:
+                        key = winData1.getkey()
+                    except:
+                        key = None
+
+                    if key == 'a':
+                        if q > 0:
+                            q -= 1
+                        
+                    elif key == 'd':
+                        if q < 1:
+                            q += 1
+
+                    winData1.attroff(WHITE_AND_GREEN)     
+                    winData1.attron(WHITE_AND_MAGENTA)
+                    winData1.addstr(4, 0, "Direction ?        | FWD | REV | ? ")
+                    winData1.attroff(WHITE_AND_MAGENTA)     
+                    winData1.attron(WHITE_AND_GREEN)
+
+                    if q == 0:
+                        winData1.addstr(4, 19, "| FWD |")
+                        dir_user[0] = 1                         
+                    
+                    elif q == 1:
+                        winData1.addstr(4, 25, "| REV |")
+                        dir_user[0] = 0                    
+
+                    winData1.refresh()
+                    sleep(0.5)
+                
 
         # Act if device two is on the bus
         if rollcall[1] > 0:
-            #winData2 = curses.newwin(5, 60, 12, 30)
-            pass
+            # User wants to disable the device (leave in standby - no update)
+            if poll_user[1] == 0:
+                pass
 
+            # User selected JOG function
+            elif poll_user[1] == 1:
+                winData2 = curses.newwin(5, 60, 12, 30)
+                winData2.attron(WHITE_AND_MAGENTA)
+
+
+                winData2.addstr(0, 0, "Volumetric Flow Rate Q [L/s] in [70n, 10u] : ")
+                winData2.refresh()
+                win_data_ret = curses.newwin(1, 10, 12, 76)
+                curses.echo()
+                box = Textbox(win_data_ret)
+                box.edit()
+                q_user[1] = box.gather().strip().replace("\n", "")
+
+
+                winData2.addstr(1, 0, "Syringe Radius in [m] : ")
+                win_data_ret.clear()
+                win_data_ret.mvwin(13,55)
+                winData2.refresh()
+                box.edit()
+                radius_user[1] = box.gather().strip().replace("\n", "")
+
+
+                winData2.addstr(2, 0, "Direction ?        | FWD | REV | ? ")
+                win_data_ret.clear()
+                winData2.refresh()
+
+                winData2.attroff(WHITE_AND_MAGENTA)     
+                winData2.attron(WHITE_AND_GREEN)
+
+                            # collect data
+                curses.noecho()
+                winData2.nodelay(True)
+                q = 0
+                key = ""
+                while key != 'w':
+                    try:
+                        key = winData2.getkey()
+                    except:
+                        key = None
+
+                    if key == 'a':
+                        if q > 0:
+                            q -= 1
+                        
+                    elif key == 'd':
+                        if q < 1:
+                            q += 1
+
+                    winData2.attroff(WHITE_AND_GREEN)     
+                    winData2.attron(WHITE_AND_MAGENTA)
+                    winData2.addstr(2, 0, "Direction ?        | FWD | REV | ? ")
+                    winData2.attroff(WHITE_AND_MAGENTA)     
+                    winData2.attron(WHITE_AND_GREEN)
+
+                    if q == 0:
+                        winData2.addstr(2, 19, "| FWD |")
+                        dir_user[1] = 1                         
+                    
+                    elif q == 1:
+                        winData2.addstr(2, 25, "| REV |")
+                        dir_user[1] = 0                    
+
+                    winData2.refresh()
+                    sleep(0.75)
+
+            # User sel RUN function
+            elif poll_user[1] == 2:
+                winData2 = curses.newwin(5, 60, 12, 30)
+                winData2.attron(WHITE_AND_MAGENTA)
+
+
+                winData2.addstr(0, 0, "Volumetric Flow Rate Q [L/s] in [70n, 10u] : ")
+                winData2.refresh()
+                win_data_ret = curses.newwin(1, 10, 12, 76)
+                curses.echo()
+                box = Textbox(win_data_ret)
+                box.edit()
+                q_user[1] = box.gather().strip().replace("\n", "")
+
+
+                winData2.addstr(1, 0, "Syringe Radius in [m] : ")
+                win_data_ret.clear()
+                win_data_ret.mvwin(13,55)
+                winData2.refresh()
+                box.edit()
+                radius_user[1] = box.gather().strip().replace("\n", "")
+
+                winData2.addstr(2, 0, "Syringe Capacity in [mL] : ")
+                win_data_ret.clear()
+                win_data_ret.mvwin(14,58)
+                winData2.refresh()
+                box.edit()
+                cap_user[1] = box.gather().strip().replace("\n", "")
+
+                winData2.addstr(3, 0, "Hour # : ")
+                win_data_ret.clear()
+                win_data_ret.mvwin(15,40)
+                winData2.refresh()
+                box.edit()
+                hour_user[1] = box.gather().strip().replace("\n", "")
+
+                winData2.addstr(3, 16, "Minute # : ")
+                win_data_ret.clear()
+                win_data_ret.mvwin(15,58)
+                winData2.refresh()
+                box.edit()
+                min_user[1] = box.gather().strip().replace("\n", "")
+
+                winData2.addstr(3, 35, "Second # : ")
+                win_data_ret.clear()
+                win_data_ret.mvwin(15,77)
+                winData2.refresh()
+                box.edit()
+                sec_user[1] = box.gather().strip().replace("\n", "")
+
+
+                winData2.addstr(4, 0, "Direction ?        | FWD | REV | ? ")
+                win_data_ret.clear()
+                winData2.refresh()
+
+                winData2.attroff(WHITE_AND_MAGENTA)     
+                winData2.attron(WHITE_AND_GREEN)
+
+                            # collect data
+                curses.noecho()
+                winData2.nodelay(True)
+                q = 0
+                key = ""
+                while key != 'w':
+                    try:
+                        key = winData2.getkey()
+                    except:
+                        key = None
+
+                    if key == 'a':
+                        if q > 0:
+                            q -= 1
+                        
+                    elif key == 'd':
+                        if q < 1:
+                            q += 1
+
+                    winData2.attroff(WHITE_AND_GREEN)     
+                    winData2.attron(WHITE_AND_MAGENTA)
+                    winData2.addstr(4, 0, "Direction ?        | FWD | REV | ? ")
+                    winData2.attroff(WHITE_AND_MAGENTA)     
+                    winData2.attron(WHITE_AND_GREEN)
+
+                    if q == 0:
+                        winData2.addstr(4, 19, "| FWD |")
+                        dir_user[1] = 1                         
+                    
+                    elif q == 1:
+                        winData2.addstr(4, 25, "| REV |")
+                        dir_user[1] = 0                    
+
+                    winData2.refresh()
+                    sleep(0.5)
 
         # Act if device three is on the bus
         if rollcall[2] > 0:
             #winData3 = curses.newwin(5, 60, 19, 30)
-            pass
+            # User wants to diable the device (leave in standby - no update)
+            if poll_user[2] == 0:
+                pass
+
+            # User selected JOG function
+            elif poll_user[2] == 1:
+                winData3 = curses.newwin(5, 60, 19, 30)
+                winData3.attron(WHITE_AND_MAGENTA)
+
+
+                winData3.addstr(0, 0, "Volumetric Flow Rate Q [L/s] in [70n, 10u] : ")
+                winData3.refresh()
+                win_data_ret = curses.newwin(1, 10, 19, 76)
+                curses.echo()
+                box = Textbox(win_data_ret)
+                box.edit()
+                q_user[2] = box.gather().strip().replace("\n", "")
+
+
+                winData3.addstr(1, 0, "Syringe Radius in [m] : ")
+                win_data_ret.clear()
+                win_data_ret.mvwin(20,55)
+                winData3.refresh()
+                box.edit()
+                radius_user[2] = box.gather().strip().replace("\n", "")
+
+
+                winData3.addstr(2, 0, "Direction ?        | FWD | REV | ? ")
+                win_data_ret.clear()
+                winData3.refresh()
+
+                winData3.attroff(WHITE_AND_MAGENTA)     
+                winData3.attron(WHITE_AND_GREEN)
+
+                            # collect data
+                curses.noecho()
+                winData3.nodelay(True)
+                q = 0
+                key = ""
+                while key != 'w':
+                    try:
+                        key = winData3.getkey()
+                    except:
+                        key = None
+
+                    if key == 'a':
+                        if q > 0:
+                            q -= 1
+                        
+                    elif key == 'd':
+                        if q < 1:
+                            q += 1
+
+                    winData3.attroff(WHITE_AND_GREEN)     
+                    winData3.attron(WHITE_AND_MAGENTA)
+                    winData3.addstr(2, 0, "Direction ?        | FWD | REV | ? ")
+                    winData3.attroff(WHITE_AND_MAGENTA)     
+                    winData3.attron(WHITE_AND_GREEN)
+
+                    if q == 0:
+                        winData3.addstr(2, 19, "| FWD |")
+                        dir_user[2] = 1                         
+                    
+                    elif q == 1:
+                        winData3.addstr(2, 25, "| REV |")
+                        dir_user[2] = 0                    
+
+                    winData3.refresh()
+                    sleep(0.75)
+
+            # User sel RUN function
+            elif poll_user[2] == 2:
+                winData3 = curses.newwin(5, 60, 19, 30)
+                winData3.attron(WHITE_AND_MAGENTA)
+
+
+                winData3.addstr(0, 0, "Volumetric Flow Rate Q [L/s] in [70n, 10u] : ")
+                winData3.refresh()
+                win_data_ret = curses.newwin(1, 10, 19, 76)
+                curses.echo()
+                box = Textbox(win_data_ret)
+                box.edit()
+                q_user[2] = box.gather().strip().replace("\n", "")
+
+
+                winData3.addstr(1, 0, "Syringe Radius in [m] : ")
+                win_data_ret.clear()
+                win_data_ret.mvwin(20,55)
+                winData3.refresh()
+                box.edit()
+                radius_user[2] = box.gather().strip().replace("\n", "")
+
+                winData3.addstr(2, 0, "Syringe Capacity in [mL] : ")
+                win_data_ret.clear()
+                win_data_ret.mvwin(21,58)
+                winData3.refresh()
+                box.edit()
+                cap_user[2] = box.gather().strip().replace("\n", "")
+
+                winData3.addstr(3, 0, "Hour # : ")
+                win_data_ret.clear()
+                win_data_ret.mvwin(22,40)
+                winData3.refresh()
+                box.edit()
+                hour_user[2] = box.gather().strip().replace("\n", "")
+
+                winData3.addstr(3, 16, "Minute # : ")
+                win_data_ret.clear()
+                win_data_ret.mvwin(22,58)
+                winData3.refresh()
+                box.edit()
+                min_user[2] = box.gather().strip().replace("\n", "")
+
+                winData3.addstr(3, 35, "Second # : ")
+                win_data_ret.clear()
+                win_data_ret.mvwin(22,77)
+                winData3.refresh()
+                box.edit()
+                sec_user[2] = box.gather().strip().replace("\n", "")
+
+
+                winData3.addstr(4, 0, "Direction ?        | FWD | REV | ? ")
+                win_data_ret.clear()
+                winData3.refresh()
+
+                winData3.attroff(WHITE_AND_MAGENTA)     
+                winData3.attron(WHITE_AND_GREEN)
+
+                            # collect data
+                curses.noecho()
+                winData3.nodelay(True)
+                q = 0
+                key = ""
+                while key != 'w':
+                    try:
+                        key = winData3.getkey()
+                    except:
+                        key = None
+
+                    if key == 'a':
+                        if q > 0:
+                            q -= 1
+                        
+                    elif key == 'd':
+                        if q < 1:
+                            q += 1
+
+                    winData3.attroff(WHITE_AND_GREEN)     
+                    winData3.attron(WHITE_AND_MAGENTA)
+                    winData3.addstr(4, 0, "Direction ?        | FWD | REV | ? ")
+                    winData3.attroff(WHITE_AND_MAGENTA)     
+                    winData3.attron(WHITE_AND_GREEN)
+
+                    if q == 0:
+                        winData3.addstr(4, 19, "| FWD |")
+                        dir_user[2] = 1                         
+                    
+                    elif q == 1:
+                        winData3.addstr(4, 25, "| REV |")
+                        dir_user[2] = 0                    
+
+                    winData3.refresh()
+                    sleep(0.5)
 
         winData4 = curses.newwin(1, 46, 25, 35)
 
