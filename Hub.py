@@ -3,7 +3,7 @@
 # SMSS Hub Controller V1.0
 
 
-#from smbus2 import SMBus, i2c_msg        # I2C library
+from smbus2 import SMBus, i2c_msg        # I2C library
 from time import sleep                   # python delay
 
 from transitions import Machine          # state machine
@@ -62,17 +62,22 @@ def main():
     ARD_ADD_3 = 0x42
     address = [ARD_ADD_1, ARD_ADD_2, ARD_ADD_3]
 
+    # Dictating codes 
+    POLLDATA =  1                        # Ard will rec[OFF, JOG, START] 
+    Q_DATA  = 2                          # Ard will rec[q_user]
+    R_DATA  = 3                          # Ard will rec[syr_radius_user]
+    CAP_DATA = 4                        # Ard will rec[syr_capacity]
+    DUR_DATA = 5                        # Ard will rec[hour_user, min_user, sec_user]
+    DIR_DATA = 6                        # Ard will rec[DIRECTION]
+    FEEDBACK = 7                        # Pi is requesting feedback str for error messages
+
     #availability of arduino deivces 0 = false, 1 = true
     global rollcall
-    rollcall = [1,0,0]
+    rollcall = [0,0,0]
 
     # GUI command codes
     global FRAME, POLL, DATA, RUN
     global reqGUI
-
-    # PI to Arduino command codes
-    #global CONTACT                # First contact for devices on bus 
-    #CONTACT = 0x4
 
     #curses window
     stdscr = curses.initscr()
@@ -85,7 +90,7 @@ def main():
         if Hub.state == 'START' :
 
             #Identify devices on the buffer
-            #rollcall = deviceRollcall(address)
+            rollcall = deviceRollcall(address)
             sleep(1)
 
             #Display GUI background frame
@@ -96,6 +101,12 @@ def main():
             reqGUI = POLL
             curs(stdscr)
 
+            # Write dictation code + poll_user
+            for i in range(2):
+                if rollcall[i] > 0:
+                    transmit_block(address[i], POLLDATA, poll_user[i] )
+            
+            # Change states to DATAPULL
             Hub.CONFIRM()
 
 
@@ -116,29 +127,21 @@ def main():
             pass
 
 
-"""    
+    
 
         
 
-# transmit__all_byte()
-# SIGNATURE : bool, int -> 
-# PURPOSE : Transmits identical byte of data to all enabled arduinos
+# transmit__block()
+# SIGNATURE : int, int, int -> 
+# PURPOSE : Transmits a dictating code +  data to an address
 #           
-def transmit_all_byte(bool_array, int_data):
+def transmit_block(addr, dict_code, int_data):
         
-    with SMBus(1) as bus: # write to BUS
-
-        # device one is requested active -> write
-        if bool_array[0] > 0 :
-            bus.write_byte(ARD_ADD_1, int_data)
-
-        # device two is requested active -> write
-        if bool_array[1] > 0 :
-            bus.write_byte(ARD_ADD_2, int_data)
-
-        # device three is requested active -> write
-        if bool_array[2] > 0 :
-            bus.write_byte(ARD_ADD_3, int_data)
+    with SMBus(1) as bus: 
+        bus.write_byte(addr, dict_code)
+        sleep(0.1)
+        bus.write_byte(addr, int_data)
+            
 
 
 # recv_all_byte()
@@ -179,31 +182,29 @@ def deviceRollcall(myaddress):
 
         # Try to contact each device
         try:
-            bus.write_byte(myaddress[0], CONTACT)
+            bus.write_byte(myaddress[0], 0)
             dev_status[0] = 1
         except:
-            pass
             #print("Device 1 not on bus")
+            pass
 
         try:
-            bus.write_byte(myaddress[1], CONTACT)
+            bus.write_byte(myaddress[1], 0)
             dev_status[1] = 1
         except:
-            pass
             #print("Device 2 not on bus")
+            pass
 
         try:
-            bus.write_byte(myaddress[2], CONTACT)
+            bus.write_byte(myaddress[2], 0)
             dev_status[2] = 1
         except:
-            pass
             #print("Device 3 not on bus")
-
-
+            pass
+        
     return dev_status
 
-
-   """ 
+ 
 
 def curs(stdscr):
 
@@ -309,7 +310,7 @@ def curs(stdscr):
             q = 0
             key = ""
 
-            while key is not 'w':
+            while key != 'w':
 
                 winPoll1.attroff(BLACK_AND_WHITE)     
                 winPoll1.attron(WHITE_AND_GREEN)
@@ -320,28 +321,28 @@ def curs(stdscr):
                 except:
                     key = None
 
-                if key is 'a':
+                if key == 'a':
                     if q > 0:
                         q -= 1
                         
-                elif key is 'd':
+                elif key == 'd':
                     if q < 2:
                         q += 1
 
 
-                if q is 0:
+                if q == 0:
                     winPoll1.attroff(WHITE_AND_GREEN)
                     winPoll1.attron(BLACK_AND_WHITE)
                     winPoll1.addstr(1, 26, "| OFF |")
                     poll_user[0] = 0                    # disable the device
                     
-                elif q is 1:
+                elif q == 1:
                     winPoll1.attroff(WHITE_AND_GREEN)
                     winPoll1.attron(BLACK_AND_WHITE)
                     winPoll1.addstr(1, 32, "| JOG |")
                     poll_user[0] = 1                    # jog the device
 
-                elif q is 2:
+                elif q == 2:
                     winPoll1.attroff(WHITE_AND_GREEN)
                     winPoll1.attron(BLACK_AND_WHITE)
                     winPoll1.addstr(1, 38, "| RUN |")
@@ -368,7 +369,7 @@ def curs(stdscr):
             q = 0
             key = ""
 
-            while key is not 'w':
+            while key != 'w':
 
                 winPoll2.attroff(BLACK_AND_WHITE)     
                 winPoll2.attron(WHITE_AND_GREEN)
@@ -379,28 +380,28 @@ def curs(stdscr):
                 except:
                     key = None
 
-                if key is 'a':
+                if key == 'a':
                     if q > 0:
                         q -= 1
                         
-                elif key is 'd':
+                elif key == 'd':
                     if q < 2:
                         q += 1
 
 
-                if q is 0:
+                if q == 0:
                     winPoll2.attroff(WHITE_AND_GREEN)
                     winPoll2.attron(BLACK_AND_WHITE)
                     winPoll2.addstr(1, 26, "| OFF |")
                     poll_user[1] = 0                    # disable the device
                     
-                elif q is 1:
+                elif q == 1:
                     winPoll2.attroff(WHITE_AND_GREEN)
                     winPoll2.attron(BLACK_AND_WHITE)
                     winPoll2.addstr(1, 32, "| JOG |")
                     poll_user[1] = 1                    # jog the device
 
-                elif q is 2:
+                elif q == 2:
                     winPoll2.attroff(WHITE_AND_GREEN)
                     winPoll2.attron(BLACK_AND_WHITE)
                     winPoll2.addstr(1, 38, "| RUN |")
@@ -425,7 +426,7 @@ def curs(stdscr):
             q = 0
             key = ""
 
-            while key is not 'w':
+            while key != 'w':
 
                 winPoll3.attroff(BLACK_AND_WHITE)     
                 winPoll3.attron(WHITE_AND_GREEN)
@@ -436,28 +437,28 @@ def curs(stdscr):
                 except:
                     key = None
 
-                if key is 'a':
+                if key == 'a':
                     if q > 0:
                         q -= 1
                         
-                elif key is 'd':
+                elif key == 'd':
                     if q < 2:
                         q += 1
 
 
-                if q is 0:
+                if q == 0:
                     winPoll3.attroff(WHITE_AND_GREEN)
                     winPoll3.attron(BLACK_AND_WHITE)
                     winPoll3.addstr(1, 26, "| OFF |")
                     poll_user[2] = 0                    # disable the device
                     
-                elif q is 1:
+                elif q == 1:
                     winPoll3.attroff(WHITE_AND_GREEN)
                     winPoll3.attron(BLACK_AND_WHITE)
                     winPoll3.addstr(1, 32, "| JOG |")
                     poll_user[2] = 1                    # jog the device
 
-                elif q is 2:
+                elif q == 2:
                     winPoll3.attroff(WHITE_AND_GREEN)
                     winPoll3.attron(BLACK_AND_WHITE)
                     winPoll3.addstr(1, 38, "| RUN |")
@@ -478,7 +479,7 @@ def curs(stdscr):
             
             key = ""
 
-            while key is not 'w':
+            while key != 'w':
 
                 try:
                     key = winPoll3.getkey()
