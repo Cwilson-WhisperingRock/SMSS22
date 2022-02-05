@@ -3,7 +3,7 @@
 # SMSS Hub Controller V1.0
 
 
-#from smbus2 import SMBus, i2c_msg        # I2C library
+from smbus2 import SMBus, i2c_msg        # I2C library
 from time import sleep                   # python delay
 
 from transitions import Machine          # state machine
@@ -73,7 +73,7 @@ def main():
 
     #availability of arduino deivces 0 = false, 1 = true
     global rollcall
-    rollcall = [1,1,1]
+    rollcall = [0,0,0]
 
     # GUI command codes
     global FRAME, POLL, DATA, RUN
@@ -90,7 +90,7 @@ def main():
         if Hub.state == 'START' :
 
             #Identify devices on the buffer
-            #rollcall = deviceRollcall(address)
+            rollcall = deviceRollcall(address)
             sleep(1)
 
             #Display GUI background frame
@@ -102,9 +102,13 @@ def main():
             curs(stdscr)
 
             # Write dictation code + poll_user
-            #for i in range(2):
-            #    if rollcall[i] > 0:
-            #        transmit_block(address[i], POLLDATA, poll_user[i] )
+            for i in range(3):
+                if rollcall[i] > 0:
+                    #print(f"{poll_user[i]}")
+                    transmit_block(address[i], POLLDATA, poll_user[i] )
+                else:
+                    #print("Dont got'em")
+                    pass
             
             # Change states to DATAPULL
             Hub.CONFIRM()
@@ -113,6 +117,33 @@ def main():
         elif Hub.state == 'DATAPULL' :
             reqGUI = DATA
             curs(stdscr)
+
+            for i in range(3):
+                # if device is on bus
+                if rollcall[i] > 0:
+                    # if device is in JOG
+                    if poll_user[i] == 1:
+                        # transmit variables
+                        transmit_block(address[i], Q_DATA, int(q_user[i]))
+                        transmit_block(address[i], R_DATA, int(radius_user[i]) )
+                        transmit_block(address[i], DIR_DATA, int(dir_user[i]) )
+                        # ticket request
+                        #  if not, them feedback request
+                                       
+                    # if device is in RUN
+                    elif poll_user[i] == 2:
+                        print(f"{q_user[i]}");
+                        transmit_block(address[i], Q_DATA, int(q_user[i]) )
+                        transmit_block(address[i], R_DATA, int(radius_user[i]) )
+                        transmit_block(address[i], CAP_DATA, int(cap_user[i]) )
+                        transmit_block(address[i], DUR_DATA, int(hour_user[i]) )
+                        transmit_block(address[i], DUR_DATA, int(min_user[i]) )
+                        transmit_block(address[i], DUR_DATA, int(sec_user[i]) )
+                        transmit_block(address[i], DIR_DATA, int(dir_user[i]) )
+                        # ticket request
+                        #  if not, them feedback request
+
+            # if all present devices have tickets, Hub.EVENTSTART() 
 
         elif Hub.state == 'RUN' :
             pass
@@ -137,10 +168,10 @@ def main():
 #           
 def transmit_block(addr, dict_code, int_data):
         
-    with SMBus(1) as bus: 
-        bus.write_byte(addr, dict_code)
+    with SMBus(1) as bus:
+        bus.write_byte(addr,  dict_code)
         sleep(0.1)
-        bus.write_byte(addr, int_data)
+        bus.write_byte(addr,  int_data)
             
 
 
@@ -180,27 +211,17 @@ def deviceRollcall(myaddress):
 
     with SMBus(1) as bus: # write to BUS
 
-        # Try to contact each device
-        try:
-            bus.write_byte(myaddress[0], 0)
-            dev_status[0] = 1
-        except:
-            #print("Device 1 not on bus")
-            pass
+        for i in range(3):
 
-        try:
-            bus.write_byte(myaddress[1], 0)
-            dev_status[1] = 1
-        except:
-            #print("Device 2 not on bus")
-            pass
-
-        try:
-            bus.write_byte(myaddress[2], 0)
-            dev_status[2] = 1
-        except:
-            #print("Device 3 not on bus")
-            pass
+            # Try to contact each device
+            try:
+                bus.write_byte(myaddress[i], 0)
+                dev_status[i] = 1
+                print(f"Device {i} on bus")
+            except:
+                #print(f"Device {i} not on bus")
+                dev_status[i] = 0
+                pass
         
     return dev_status
 
@@ -479,7 +500,7 @@ def curs(stdscr):
         while key != 'w':
 
             try:
-                key = winPoll3.getkey()
+                key = winPoll4.getkey()
             except:
                 key = None
                 
@@ -502,7 +523,7 @@ def curs(stdscr):
                 winData1.attron(WHITE_AND_MAGENTA)
 
 
-                winData1.addstr(0, 0, "Volumetric Flow Rate Q [L/s] in [70n, 10u] : ")
+                winData1.addstr(0, 0, "Volumetric Flow Rate Q [nL/s] in [70n, 10u] : ")
                 winData1.refresh()
                 win_data_ret = curses.newwin(1, 10, 5, 76)
                 curses.echo()
@@ -511,7 +532,7 @@ def curs(stdscr):
                 q_user[0] = box.gather().strip().replace("\n", "")
 
 
-                winData1.addstr(1, 0, "Syringe Radius in [m] : ")
+                winData1.addstr(1, 0, "Syringe Radius in [mm] : ")
                 win_data_ret.clear()
                 win_data_ret.mvwin(6,55)
                 winData1.refresh()
@@ -569,7 +590,7 @@ def curs(stdscr):
                 winData1.attron(WHITE_AND_MAGENTA)
 
 
-                winData1.addstr(0, 0, "Volumetric Flow Rate Q [L/s] in [70n, 10u] : ")
+                winData1.addstr(0, 0, "Volumetric Flow Rate Q [nL/s] in [70n, 10u] : ")
                 winData1.refresh()
                 win_data_ret = curses.newwin(1, 10, 5, 76)
                 curses.echo()
@@ -578,7 +599,7 @@ def curs(stdscr):
                 q_user[0] = box.gather().strip().replace("\n", "")
 
 
-                winData1.addstr(1, 0, "Syringe Radius in [m] : ")
+                winData1.addstr(1, 0, "Syringe Radius in [mm] : ")
                 win_data_ret.clear()
                 win_data_ret.mvwin(6,55)
                 winData1.refresh()
@@ -670,7 +691,7 @@ def curs(stdscr):
                 winData2.attron(WHITE_AND_MAGENTA)
 
 
-                winData2.addstr(0, 0, "Volumetric Flow Rate Q [L/s] in [70n, 10u] : ")
+                winData2.addstr(0, 0, "Volumetric Flow Rate Q [nL/s] in [70n, 10u] : ")
                 winData2.refresh()
                 win_data_ret = curses.newwin(1, 10, 12, 76)
                 curses.echo()
@@ -679,7 +700,7 @@ def curs(stdscr):
                 q_user[1] = box.gather().strip().replace("\n", "")
 
 
-                winData2.addstr(1, 0, "Syringe Radius in [m] : ")
+                winData2.addstr(1, 0, "Syringe Radius in [mm] : ")
                 win_data_ret.clear()
                 win_data_ret.mvwin(13,55)
                 winData2.refresh()
@@ -736,7 +757,7 @@ def curs(stdscr):
                 winData2.attron(WHITE_AND_MAGENTA)
 
 
-                winData2.addstr(0, 0, "Volumetric Flow Rate Q [L/s] in [70n, 10u] : ")
+                winData2.addstr(0, 0, "Volumetric Flow Rate Q [nL/s] in [70n, 10u] : ")
                 winData2.refresh()
                 win_data_ret = curses.newwin(1, 10, 12, 76)
                 curses.echo()
@@ -745,7 +766,7 @@ def curs(stdscr):
                 q_user[1] = box.gather().strip().replace("\n", "")
 
 
-                winData2.addstr(1, 0, "Syringe Radius in [m] : ")
+                winData2.addstr(1, 0, "Syringe Radius in [mm] : ")
                 win_data_ret.clear()
                 win_data_ret.mvwin(13,55)
                 winData2.refresh()
@@ -837,7 +858,7 @@ def curs(stdscr):
                 winData3.attron(WHITE_AND_MAGENTA)
 
 
-                winData3.addstr(0, 0, "Volumetric Flow Rate Q [L/s] in [70n, 10u] : ")
+                winData3.addstr(0, 0, "Volumetric Flow Rate Q [nL/s] in [70n, 10u] : ")
                 winData3.refresh()
                 win_data_ret = curses.newwin(1, 10, 19, 76)
                 curses.echo()
@@ -846,7 +867,7 @@ def curs(stdscr):
                 q_user[2] = box.gather().strip().replace("\n", "")
 
 
-                winData3.addstr(1, 0, "Syringe Radius in [m] : ")
+                winData3.addstr(1, 0, "Syringe Radius in [mm] : ")
                 win_data_ret.clear()
                 win_data_ret.mvwin(20,55)
                 winData3.refresh()
@@ -903,7 +924,7 @@ def curs(stdscr):
                 winData3.attron(WHITE_AND_MAGENTA)
 
 
-                winData3.addstr(0, 0, "Volumetric Flow Rate Q [L/s] in [70n, 10u] : ")
+                winData3.addstr(0, 0, "Volumetric Flow Rate Q [nL/s] in [70n, 10u] : ")
                 winData3.refresh()
                 win_data_ret = curses.newwin(1, 10, 19, 76)
                 curses.echo()
@@ -912,7 +933,7 @@ def curs(stdscr):
                 q_user[2] = box.gather().strip().replace("\n", "")
 
 
-                winData3.addstr(1, 0, "Syringe Radius in [m] : ")
+                winData3.addstr(1, 0, "Syringe Radius in [mm] : ")
                 win_data_ret.clear()
                 win_data_ret.mvwin(20,55)
                 winData3.refresh()
