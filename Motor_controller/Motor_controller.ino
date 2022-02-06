@@ -137,8 +137,8 @@ unsigned long time_stamp_end = 0;           // "
   #define CAP_DATA 4                        // Ard will recv[syr_capacity]
   #define DUR_DATA 5                        // Ard will recv[hour_user, min_user, sec_user]
   #define DIR_DATA 6                        // Ard will recv[DIRECTION]
-  #define EVENT_DATA 7                      // Ard will recv[true- proceed to RUN from DATAPULL]
-  #define ESTOP_DATA 8                      // Ard will recv[true- ESTOP condition]
+  #define EVENT_DATA 7                      // Ard will proceed to RUN
+  #define ESTOP_DATA 8                      // Ard will proceed to STOP
 
   // Arduino's Requested (Sub) codes                       
   #define LARGE_ERR 0x3                     // User req too large (Q) for hardware constraints
@@ -1051,7 +1051,7 @@ void validDur_Start(float Q,float Vol, unsigned int Time){
             break;
 
           case EVENT_DATA:
-            eventstart = Wire.read();             
+            eventstart = true;             
             recData = 0;                      
             break;
 
