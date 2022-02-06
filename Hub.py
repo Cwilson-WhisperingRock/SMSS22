@@ -3,7 +3,7 @@
 # SMSS Hub Controller V1.0
 
 
-from smbus2 import SMBus, i2c_msg        # I2C library
+#from smbus2 import SMBus, i2c_msg        # I2C library
 from time import sleep                   # python delay
 
 from transitions import Machine          # state machine
@@ -30,13 +30,18 @@ class HubMachine(object):
         self.machine.add_transition(trigger = 'REBOOT', source = '*', dest = 'RESET')
 
 # States for GUI
-global FRAME, POLL, DATA, RUN
+global FRAME, POLL, DATA, RUN, ERROR, USER_CONFIRM
 global reqGUI
 reqGUI = 0x0
 FRAME = 0x0
 POLL = 0x1
 DATA = 0x2
-RUN = 0x3
+ERROR = 0x3
+RUN = 0x4
+USER_CONFIRM = 0x6
+
+global column
+column = 0
 
 
 # Data between user-curses-arduino
@@ -52,6 +57,23 @@ min_user = [0,0,0]
 sec_user = [0,0,0]
 dir_user = [0,0,0]                                              # 0 - REV, 1 - FWD 
 
+
+# Arduino's Requested (Sub) codes 
+global LARGE_ERR, SMALL_ERR, DUR_ERR, LD_ERR, SD_ERR, DICT_ERR, NO_ERR
+global WAIT_CODE, FINISH_CODE, TIME_CODE, user_code
+
+LARGE_ERR = 0x3                     # User req too large (Q) for hardware constraints
+SMALL_ERR = 0x4                     # User req too small (Q) for hardware constraints
+DUR_ERR = 0x5                       # User req too long (time) for hardware constraints
+LD_ERR = 0x6                        # User too large and long
+SD_ERR = 0x7                        # User too small and long
+DICT_ERR = 0x8                      # Wrong dictating codes
+NO_ERR = 0x10                       # No error to report
+
+WAIT_CODE = 0x15                    # Ard needs time to pull data and validate 
+FINISH_CODE=  0x16                  # Ard's duration has been reached and finished RUN_S
+TIME_CODE =  0x17                   # Ard is not done with RUN_S and will return time(h,m,s) if prompted
+user_code = 0                       # working variable
     
 def main():
     
@@ -69,29 +91,31 @@ def main():
     CAP_DATA = 4                        # Ard will recv[syr_capacity]
     DUR_DATA = 5                        # Ard will recv[hour_user, min_user, sec_user]
     DIR_DATA = 6                        # Ard will recv[DIRECTION]
-    EVENT_DATA = 7                      # Ard will recv[true - proceed to RUN from DATAPULL]
-    ESTOP_DATA = 8                      # Ard will recv[true - ESTOP condition]
+    EVENT_DATA = 7                      # Ard will proceed RUN
+    ESTOP_DATA = 8                      # Ard will proceed to STOP
 
-    # Arduino's Requested (Sub) codes                       
-    LARGE_ERR = 0x3                     # User req too large (Q) for hardware constraints
-    SMALL_ERR = 0x4                     # User req too small (Q) for hardware constraints
-    DUR_ERR = 0x5                       # User req too long (time) for hardware constraints
-    LD_ERR = 0x6                        # User too large and long
-    SD_ERR = 0x7                        # User too small and long
-    DICT_ERR = 0x8                      # Wrong dictating codes
-    NO_ERR = 0x10                       # No error to report
+    # Arduino's Requested (Sub) codes 
+    global user_code
+    #user_code = 0                       # working variable
+    user_code = NO_ERR
 
-    WAIT_CODE = 0x15                    # Ard needs time to pull data and validate 
-    FINISH_CODE=  0x16                  # Ard's duration has been reached and finished RUN_S
-    TIME_CODE =  0x17                   # Ard is not done with RUN_S and will return time(h,m,s) if prompted
-    
+
     #availability of arduino deivces 0 = false, 1 = true
     global rollcall
-    rollcall = [0,0,0]
+    #rollcall = [0,0,0]
+    rollcall = [1,1,1]
+
+    # GUI Window constants
+    global column
+    COL_CONST = 7
+    COL_OFFSET = 5
+
+    #redo error code 
+    REDO_ERR = 0x25
 
     # GUI command codes
-    global FRAME, POLL, DATA, RUN
-    global reqGUI
+    #global FRAME, POLL, DATA, RUN, ERROR, USER_CONFIRM
+    #global reqGUI
 
     #curses window
     stdscr = curses.initscr()
@@ -104,60 +128,137 @@ def main():
         if Hub.state == 'START' :
 
             #Identify devices on the buffer
-            rollcall = deviceRollcall(address)
+            #rollcall = deviceRollcall(address)
             sleep(1)
 
             #Display GUI background frame
+            global reqGUI
             reqGUI = FRAME
             curs(stdscr)
             
-            # Poll user for device run modes
-            reqGUI = POLL
-            curs(stdscr)
+
+            
 
             # Write dictation code + poll_user
             for i in range(3):
+
+                # Poll user for device run modes
+                reqGUI = POLL
+
+
                 if rollcall[i] > 0:
+                    global column
+                    column = COL_CONST * i + COL_OFFSET
+                    curs(stdscr)
                     #print(f"{poll_user[i]}")
-                    transmit_block(address[i], POLLDATA, poll_user[i] )
+                    #transmit_block(address[i], POLLDATA, poll_user[i] )
+                    pass
                 else:
                     #print("Dont got'em")
                     pass
             
             # Change states to DATAPULL
+            reqGUI = USER_CONFIRM
+            curs(stdscr)
             Hub.CONFIRM()
 
 
         elif Hub.state == 'DATAPULL' :
-            reqGUI = DATA
-            curs(stdscr)
+
+            loop = True                 # loop to weed out user error
+            data_preserve = False       # flag to redo user data
 
             for i in range(3):
+
                 # if device is on bus
                 if rollcall[i] > 0:
-                    # if device is in JOG
-                    if poll_user[i] == 1:
-                        # transmit variables
-                        transmit_block(address[i], Q_DATA, int(q_user[i]))
-                        transmit_block(address[i], R_DATA, int(radius_user[i]) )
-                        transmit_block(address[i], DIR_DATA, int(dir_user[i]) )
-                        # ticket request
-                        #  if not, them feedback request
-                                       
-                    # if device is in RUN
-                    elif poll_user[i] == 2:
-                        print(f"{q_user[i]}");
-                        transmit_block(address[i], Q_DATA, int(q_user[i]) )
-                        transmit_block(address[i], R_DATA, int(radius_user[i]) )
-                        transmit_block(address[i], CAP_DATA, int(cap_user[i]) )
-                        transmit_block(address[i], DUR_DATA, int(hour_user[i]) )
-                        transmit_block(address[i], DUR_DATA, int(min_user[i]) )
-                        transmit_block(address[i], DUR_DATA, int(sec_user[i]) )
-                        transmit_block(address[i], DIR_DATA, int(dir_user[i]) )
-                        # ticket request
-                        #  if not, them feedback request
 
-            # if all present devices have tickets, Hub.EVENTSTART() 
+                    #print curse window + datapull
+                    #global column
+                    column = COL_CONST * i + COL_OFFSET
+                    reqGUI = DATA
+                    curs(stdscr)
+
+                    # loop until all errors are out
+                    while loop == True:
+
+                        # Send existing data or trash
+                        if data_preserve == False:
+
+                            # if device is in JOG
+                            if poll_user[i] == 1:
+                                # transmit variables
+                                #transmit_block(address[i], Q_DATA, int(q_user[i]))
+                                #transmit_block(address[i], R_DATA, int(radius_user[i]) )
+                                #transmit_block(address[i], DIR_DATA, int(dir_user[i]) )
+                                pass
+                        
+                                       
+                            # if device is in RUN
+                            elif poll_user[i] == 2:
+                                #transmit_block(address[i], Q_DATA, int(q_user[i]) )
+                                #transmit_block(address[i], R_DATA, int(radius_user[i]) )
+                                #transmit_block(address[i], CAP_DATA, int(cap_user[i]) )
+                                #transmit_block(address[i], DUR_DATA, int(hour_user[i]) )
+                                #transmit_block(address[i], DUR_DATA, int(min_user[i]) )
+                                #transmit_block(address[i], DUR_DATA, int(sec_user[i]) )
+                                #transmit_block(address[i], DIR_DATA, int(dir_user[i]) )
+                                pass
+ 
+
+                        '''
+
+                        # read bus for error codes
+                        with SMBus(1) as bus: 
+                            user_code = bus.read_byte(address[i], 0)
+
+                        
+                        '''
+
+                        # if user selected to go back
+                        if dir_user[i] == 2:
+                            user_code = REDO_ERR
+
+                            
+
+                        # pass if no errors are present
+                        if user_code == NO_ERR:
+                            loop = False
+
+                        # loop if told to wait
+                        elif user_code == WAIT_CODE:
+                            data_preserve = True
+                            loop = True
+                            pass
+
+                        elif user_code == REDO_ERR:
+                            reqGUI = POLL
+                            curs(stdscr)
+                            reqGUI = DATA
+                            curs(stdscr)
+                            data_preserve = False
+                            loop = True
+
+                            # DONT FORGET TO GET RID OF THISSSSS!!!!
+                            user_code = NO_ERR
+
+                        # proceed to error screen and loop this again
+                        else:
+                                reqGUI = ERROR
+                                curs(stdscr)
+                                data_preserve = False
+                                loop = True
+                                pass
+                        
+
+
+
+            # if all present devices have tickets, Hub.EVENTSTART()
+            reqGUI = USER_CONFIRM
+            curs(stdscr)
+            #with SMBus(1) as bus:
+            #    bus.write_byte(address[i],  EVENT_DATA)
+            Hub.EVENTSTART()
 
         elif Hub.state == 'RUN' :
             pass
@@ -173,7 +274,7 @@ def main():
 
 
     
-
+'''
         
 
 # transmit__block()
@@ -189,15 +290,12 @@ def transmit_block(addr, dict_code, int_data):
             
 
 
-# recv_all_byte()
-# SIGNATURE : bool -> int
-# PURPOSE : Reads identical byte of data from all enabled arduinos
-#           and Returns array of resulting byte
-def recv_all_byte(bool_array):
+# recv_block()
+# SIGNATURE : int -> int
+# PURPOSE : Reads data from address
+def recv_block(addr):
 
-    stor = [0,0,0]
-        
-    with SMBus(1) as bus: # write to BUS
+    with SMBus(1) as bus: 
 
         # device one is requested active -> write
         if bool_array[0] > 0 :
@@ -212,7 +310,8 @@ def recv_all_byte(bool_array):
             stor[2] = bus.read_byte(ARD_ADD_3, 0)
 
         return stor
-        
+   
+'''
 
 # deviceRollcall()
 # SIGNATURE : int_array -> int_array
@@ -243,7 +342,7 @@ def deviceRollcall(myaddress):
 
 def curs(stdscr):
 
-    global FRAME, POLL, DATA, RUN
+    global FRAME, POLL, DATA, RUN, ERROR, USER_CONFIRM
     global reqGUI
     global rollcall, poll_user, q_user, radius_user, cap_user
     global hour_user, min_user, sec_user, dir_user
@@ -329,9 +428,15 @@ def curs(stdscr):
     # Poll user for device run modes
     elif reqGUI == POLL:
 
-        if rollcall[0] > 0:
+        #avoiding a global index here people...forgive me coding gods
+
+        
+        index_gui = int((column-5)/7)
+
+
+        if rollcall[index_gui] > 0:
             # display window
-            winPoll1 = curses.newwin(5, 60, 5, 30)
+            winPoll1 = curses.newwin(5, 60, column, 30)
             curses.noecho()
             winPoll1.nodelay(True)
             winPoll1.clear()
@@ -368,137 +473,27 @@ def curs(stdscr):
                     winPoll1.attroff(WHITE_AND_GREEN)
                     winPoll1.attron(BLACK_AND_WHITE)
                     winPoll1.addstr(1, 26, "| OFF |")
-                    poll_user[0] = 0                    # disable the device
+                    poll_user[index_gui] = 0                    # disable the device
                     
                 elif q == 1:
                     winPoll1.attroff(WHITE_AND_GREEN)
                     winPoll1.attron(BLACK_AND_WHITE)
                     winPoll1.addstr(1, 32, "| JOG |")
-                    poll_user[0] = 1                    # jog the device
+                    poll_user[index_gui] = 1                    # jog the device
 
                 elif q == 2:
                     winPoll1.attroff(WHITE_AND_GREEN)
                     winPoll1.attron(BLACK_AND_WHITE)
                     winPoll1.addstr(1, 38, "| RUN |")
-                    poll_user[0] = 2                    # run the device
+                    poll_user[index_gui] = 2                    # run the device
                         
-                
+               
                 winPoll1.refresh()
                 sleep(0.5)
 
-        if rollcall[1] > 0:
-            # display window
-            winPoll2 = curses.newwin(5, 60, 12, 30)
-            curses.noecho()
-            winPoll2.nodelay(True)
-            winPoll2.clear()
-            winPoll2.attron(WHITE_AND_GREEN)
-            winPoll2.addstr(1, 5, "Device 1 Mode :      | OFF | JOG | RUN |")
-            winPoll2.addstr(3, 5, "Error Messages : ")
-            winPoll2.refresh()
-            
-            # collect data
-            q = 0
-            key = ""
 
-            while key != 'w':
-
-                winPoll2.attroff(BLACK_AND_WHITE)     
-                winPoll2.attron(WHITE_AND_GREEN)
-                winPoll2.addstr(1, 5, "Device 1 Mode :      | OFF | JOG | RUN |")
-
-                try:
-                    key = winPoll2.getkey()
-                except:
-                    key = None
-
-                if key == 'a':
-                    if q > 0:
-                        q -= 1
-                        
-                elif key == 'd':
-                    if q < 2:
-                        q += 1
-
-
-                if q == 0:
-                    winPoll2.attroff(WHITE_AND_GREEN)
-                    winPoll2.attron(BLACK_AND_WHITE)
-                    winPoll2.addstr(1, 26, "| OFF |")
-                    poll_user[1] = 0                    # disable the device
-                    
-                elif q == 1:
-                    winPoll2.attroff(WHITE_AND_GREEN)
-                    winPoll2.attron(BLACK_AND_WHITE)
-                    winPoll2.addstr(1, 32, "| JOG |")
-                    poll_user[1] = 1                    # jog the device
-
-                elif q == 2:
-                    winPoll2.attroff(WHITE_AND_GREEN)
-                    winPoll2.attron(BLACK_AND_WHITE)
-                    winPoll2.addstr(1, 38, "| RUN |")
-                    poll_user[1] = 2                    # run the device
-                        
-                
-                winPoll2.refresh()
-                sleep(0.5)
-
-        if rollcall[2] > 0:
-            # display window
-            winPoll3 = curses.newwin(5, 60, 19, 30)
-            curses.noecho()
-            winPoll3.nodelay(True)
-            winPoll3.clear()
-            winPoll3.attron(WHITE_AND_GREEN)
-            winPoll3.addstr(1, 5, "Device 1 Mode :      | OFF | JOG | RUN |")
-            winPoll3.addstr(3, 5, "Error Messages : ")
-            winPoll3.refresh()
-            
-            # collect data
-            q = 0
-            key = ""
-
-            while key != 'w':
-
-                winPoll3.attroff(BLACK_AND_WHITE)     
-                winPoll3.attron(WHITE_AND_GREEN)
-                winPoll3.addstr(1, 5, "Device 1 Mode :      | OFF | JOG | RUN |")
-
-                try:
-                    key = winPoll3.getkey()
-                except:
-                    key = None
-
-                if key == 'a':
-                    if q > 0:
-                        q -= 1
-                        
-                elif key == 'd':
-                    if q < 2:
-                        q += 1
-
-
-                if q == 0:
-                    winPoll3.attroff(WHITE_AND_GREEN)
-                    winPoll3.attron(BLACK_AND_WHITE)
-                    winPoll3.addstr(1, 26, "| OFF |")
-                    poll_user[2] = 0                    # disable the device
-                    
-                elif q == 1:
-                    winPoll3.attroff(WHITE_AND_GREEN)
-                    winPoll3.attron(BLACK_AND_WHITE)
-                    winPoll3.addstr(1, 32, "| JOG |")
-                    poll_user[2] = 1                    # jog the device
-
-                elif q == 2:
-                    winPoll3.attroff(WHITE_AND_GREEN)
-                    winPoll3.attron(BLACK_AND_WHITE)
-                    winPoll3.addstr(1, 38, "| RUN |")
-                    poll_user[2] = 2                    # run the device
-                        
-                
-                winPoll3.refresh()
-                sleep(0.5)
+    # Simple enter button
+    elif reqGUI == USER_CONFIRM:
 
         # display window
         winPoll4 = curses.newwin(1, 46, 25, 35)
@@ -524,37 +519,37 @@ def curs(stdscr):
     # Poll metrics for running in START
     elif reqGUI == DATA:
 
-        # Act if device one is on the bus
-        if rollcall[0] > 0:
+            #avoiding a global index here people...forgive me coding gods
+            index_gui = int((column-5)/7)
 
             # User wants to disable the device (leave in standby - no update)
-            if poll_user[0] == 0:
+            if poll_user[index_gui] == 0:
                 pass
 
             # User selected JOG function
-            elif poll_user[0] == 1:
-                winData1 = curses.newwin(5, 60, 5, 30)
+            elif poll_user[index_gui] == 1:
+                winData1 = curses.newwin(5, 60, column, 30)
                 winData1.attron(WHITE_AND_MAGENTA)
 
 
                 winData1.addstr(0, 0, "Volumetric Flow Rate Q [nL/s] in [70n, 10u] : ")
                 winData1.refresh()
-                win_data_ret = curses.newwin(1, 10, 5, 76)
+                win_data_ret = curses.newwin(1, 10, column, 76)
                 curses.echo()
                 box = Textbox(win_data_ret)
                 box.edit()
-                q_user[0] = box.gather().strip().replace("\n", "")
+                q_user[index_gui] = box.gather().strip().replace("\n", "")
 
 
                 winData1.addstr(1, 0, "Syringe Radius in [mm] : ")
                 win_data_ret.clear()
-                win_data_ret.mvwin(6,55)
+                win_data_ret.mvwin(column + 1,55)
                 winData1.refresh()
                 box.edit()
-                radius_user[0] = box.gather().strip().replace("\n", "")
+                radius_user[index_gui] = box.gather().strip().replace("\n", "")
 
 
-                winData1.addstr(2, 0, "Direction ?        | FWD | REV | ? ")
+                winData1.addstr(2, 0, "Direction ?        | FWD | REV | REDO | ? ")
                 win_data_ret.clear()
                 winData1.refresh()
 
@@ -577,79 +572,83 @@ def curs(stdscr):
                             q -= 1
                         
                     elif key == 'd':
-                        if q < 1:
+                        if q < 2:
                             q += 1
 
                     winData1.attroff(WHITE_AND_GREEN)     
                     winData1.attron(WHITE_AND_MAGENTA)
-                    winData1.addstr(2, 0, "Direction ?        | FWD | REV | ? ")
+                    winData1.addstr(2, 0, "Direction ?        | FWD | REV | REDO | ? ")
                     winData1.attroff(WHITE_AND_MAGENTA)     
                     winData1.attron(WHITE_AND_GREEN)
 
                     if q == 0:
                         winData1.addstr(2, 19, "| FWD |")
-                        dir_user[0] = 1                         
+                        dir_user[index_gui] = 1                         
                     
                     elif q == 1:
                         winData1.addstr(2, 25, "| REV |")
-                        dir_user[0] = 0                    
+                        dir_user[index_gui] = 0 
+                        
+                    elif q == 2:
+                        winData1.addstr(2, 31, "| REDO |")
+                        dir_user[index_gui] = 2
 
                     winData1.refresh()
-                    sleep(0.75)
+                    sleep(0.5)
 
             # User sel RUN function
-            elif poll_user[0] == 2:
+            elif poll_user[index_gui] == 2:
 
-                winData1 = curses.newwin(5, 60, 5, 30)
+                winData1 = curses.newwin(5, 60, column, 30)
                 winData1.attron(WHITE_AND_MAGENTA)
 
 
                 winData1.addstr(0, 0, "Volumetric Flow Rate Q [nL/s] in [70n, 10u] : ")
                 winData1.refresh()
-                win_data_ret = curses.newwin(1, 10, 5, 76)
+                win_data_ret = curses.newwin(1, 10, column, 76)
                 curses.echo()
                 box = Textbox(win_data_ret)
                 box.edit()
-                q_user[0] = box.gather().strip().replace("\n", "")
+                q_user[index_gui] = box.gather().strip().replace("\n", "")
 
 
                 winData1.addstr(1, 0, "Syringe Radius in [mm] : ")
                 win_data_ret.clear()
-                win_data_ret.mvwin(6,55)
+                win_data_ret.mvwin(column + 1,55)
                 winData1.refresh()
                 box.edit()
-                radius_user[0] = box.gather().strip().replace("\n", "")
+                radius_user[index_gui] = box.gather().strip().replace("\n", "")
 
                 winData1.addstr(2, 0, "Syringe Capacity in [mL] : ")
                 win_data_ret.clear()
-                win_data_ret.mvwin(7,58)
+                win_data_ret.mvwin(column + 2,58)
                 winData1.refresh()
                 box.edit()
-                cap_user[0] = box.gather().strip().replace("\n", "")
+                cap_user[index_gui] = box.gather().strip().replace("\n", "")
 
                 winData1.addstr(3, 0, "Hour # : ")
                 win_data_ret.clear()
-                win_data_ret.mvwin(8,40)
+                win_data_ret.mvwin(column + 3,40)
                 winData1.refresh()
                 box.edit()
-                hour_user[0] = box.gather().strip().replace("\n", "")
+                hour_user[index_gui] = box.gather().strip().replace("\n", "")
 
                 winData1.addstr(3, 16, "Minute # : ")
                 win_data_ret.clear()
-                win_data_ret.mvwin(8,58)
+                win_data_ret.mvwin(column + 3,58)
                 winData1.refresh()
                 box.edit()
-                min_user[0] = box.gather().strip().replace("\n", "")
+                min_user[index_gui] = box.gather().strip().replace("\n", "")
 
                 winData1.addstr(3, 35, "Second # : ")
                 win_data_ret.clear()
-                win_data_ret.mvwin(8,77)
+                win_data_ret.mvwin(column + 3,77)
                 winData1.refresh()
                 box.edit()
-                sec_user[0] = box.gather().strip().replace("\n", "")
+                sec_user[index_gui] = box.gather().strip().replace("\n", "")
 
 
-                winData1.addstr(4, 0, "Direction ?        | FWD | REV | ? ")
+                winData1.addstr(4, 0, "Direction ?        | FWD | REV | REDO | ? ")
                 win_data_ret.clear()
                 winData1.refresh()
 
@@ -672,364 +671,38 @@ def curs(stdscr):
                             q -= 1
                         
                     elif key == 'd':
-                        if q < 1:
+                        if q < 2:
                             q += 1
 
                     winData1.attroff(WHITE_AND_GREEN)     
                     winData1.attron(WHITE_AND_MAGENTA)
-                    winData1.addstr(4, 0, "Direction ?        | FWD | REV | ? ")
+                    winData1.addstr(4, 0, "Direction ?        | FWD | REV | REDO | ? ")
                     winData1.attroff(WHITE_AND_MAGENTA)     
                     winData1.attron(WHITE_AND_GREEN)
 
                     if q == 0:
                         winData1.addstr(4, 19, "| FWD |")
-                        dir_user[0] = 1                         
+                        dir_user[index_gui] = 1                         
                     
                     elif q == 1:
                         winData1.addstr(4, 25, "| REV |")
-                        dir_user[0] = 0                    
+                        dir_user[index_gui] = 0 
+                        
+                    elif q == 2:
+                        winData1.addstr(4, 31, "| REDO |")
+                        dir_user[index_gui] = 2
 
                     winData1.refresh()
                     sleep(0.5)
                 
 
-        # Act if device two is on the bus
-        if rollcall[1] > 0:
-            # User wants to disable the device (leave in standby - no update)
-            if poll_user[1] == 0:
-                pass
 
-            # User selected JOG function
-            elif poll_user[1] == 1:
-                winData2 = curses.newwin(5, 60, 12, 30)
-                winData2.attron(WHITE_AND_MAGENTA)
-
-
-                winData2.addstr(0, 0, "Volumetric Flow Rate Q [nL/s] in [70n, 10u] : ")
-                winData2.refresh()
-                win_data_ret = curses.newwin(1, 10, 12, 76)
-                curses.echo()
-                box = Textbox(win_data_ret)
-                box.edit()
-                q_user[1] = box.gather().strip().replace("\n", "")
-
-
-                winData2.addstr(1, 0, "Syringe Radius in [mm] : ")
-                win_data_ret.clear()
-                win_data_ret.mvwin(13,55)
-                winData2.refresh()
-                box.edit()
-                radius_user[1] = box.gather().strip().replace("\n", "")
-
-
-                winData2.addstr(2, 0, "Direction ?        | FWD | REV | ? ")
-                win_data_ret.clear()
-                winData2.refresh()
-
-                winData2.attroff(WHITE_AND_MAGENTA)     
-                winData2.attron(WHITE_AND_GREEN)
-
-                            # collect data
-                curses.noecho()
-                winData2.nodelay(True)
-                q = 0
-                key = ""
-                while key != 'w':
-                    try:
-                        key = winData2.getkey()
-                    except:
-                        key = None
-
-                    if key == 'a':
-                        if q > 0:
-                            q -= 1
-                        
-                    elif key == 'd':
-                        if q < 1:
-                            q += 1
-
-                    winData2.attroff(WHITE_AND_GREEN)     
-                    winData2.attron(WHITE_AND_MAGENTA)
-                    winData2.addstr(2, 0, "Direction ?        | FWD | REV | ? ")
-                    winData2.attroff(WHITE_AND_MAGENTA)     
-                    winData2.attron(WHITE_AND_GREEN)
-
-                    if q == 0:
-                        winData2.addstr(2, 19, "| FWD |")
-                        dir_user[1] = 1                         
-                    
-                    elif q == 1:
-                        winData2.addstr(2, 25, "| REV |")
-                        dir_user[1] = 0                    
-
-                    winData2.refresh()
-                    sleep(0.75)
-
-            # User sel RUN function
-            elif poll_user[1] == 2:
-                winData2 = curses.newwin(5, 60, 12, 30)
-                winData2.attron(WHITE_AND_MAGENTA)
-
-
-                winData2.addstr(0, 0, "Volumetric Flow Rate Q [nL/s] in [70n, 10u] : ")
-                winData2.refresh()
-                win_data_ret = curses.newwin(1, 10, 12, 76)
-                curses.echo()
-                box = Textbox(win_data_ret)
-                box.edit()
-                q_user[1] = box.gather().strip().replace("\n", "")
-
-
-                winData2.addstr(1, 0, "Syringe Radius in [mm] : ")
-                win_data_ret.clear()
-                win_data_ret.mvwin(13,55)
-                winData2.refresh()
-                box.edit()
-                radius_user[1] = box.gather().strip().replace("\n", "")
-
-                winData2.addstr(2, 0, "Syringe Capacity in [mL] : ")
-                win_data_ret.clear()
-                win_data_ret.mvwin(14,58)
-                winData2.refresh()
-                box.edit()
-                cap_user[1] = box.gather().strip().replace("\n", "")
-
-                winData2.addstr(3, 0, "Hour # : ")
-                win_data_ret.clear()
-                win_data_ret.mvwin(15,40)
-                winData2.refresh()
-                box.edit()
-                hour_user[1] = box.gather().strip().replace("\n", "")
-
-                winData2.addstr(3, 16, "Minute # : ")
-                win_data_ret.clear()
-                win_data_ret.mvwin(15,58)
-                winData2.refresh()
-                box.edit()
-                min_user[1] = box.gather().strip().replace("\n", "")
-
-                winData2.addstr(3, 35, "Second # : ")
-                win_data_ret.clear()
-                win_data_ret.mvwin(15,77)
-                winData2.refresh()
-                box.edit()
-                sec_user[1] = box.gather().strip().replace("\n", "")
-
-
-                winData2.addstr(4, 0, "Direction ?        | FWD | REV | ? ")
-                win_data_ret.clear()
-                winData2.refresh()
-
-                winData2.attroff(WHITE_AND_MAGENTA)     
-                winData2.attron(WHITE_AND_GREEN)
-
-                            # collect data
-                curses.noecho()
-                winData2.nodelay(True)
-                q = 0
-                key = ""
-                while key != 'w':
-                    try:
-                        key = winData2.getkey()
-                    except:
-                        key = None
-
-                    if key == 'a':
-                        if q > 0:
-                            q -= 1
-                        
-                    elif key == 'd':
-                        if q < 1:
-                            q += 1
-
-                    winData2.attroff(WHITE_AND_GREEN)     
-                    winData2.attron(WHITE_AND_MAGENTA)
-                    winData2.addstr(4, 0, "Direction ?        | FWD | REV | ? ")
-                    winData2.attroff(WHITE_AND_MAGENTA)     
-                    winData2.attron(WHITE_AND_GREEN)
-
-                    if q == 0:
-                        winData2.addstr(4, 19, "| FWD |")
-                        dir_user[1] = 1                         
-                    
-                    elif q == 1:
-                        winData2.addstr(4, 25, "| REV |")
-                        dir_user[1] = 0                    
-
-                    winData2.refresh()
-                    sleep(0.5)
-
-        # Act if device three is on the bus
-        if rollcall[2] > 0:
-            #winData3 = curses.newwin(5, 60, 19, 30)
-            # User wants to diable the device (leave in standby - no update)
-            if poll_user[2] == 0:
-                pass
-
-            # User selected JOG function
-            elif poll_user[2] == 1:
-                winData3 = curses.newwin(5, 60, 19, 30)
-                winData3.attron(WHITE_AND_MAGENTA)
-
-
-                winData3.addstr(0, 0, "Volumetric Flow Rate Q [nL/s] in [70n, 10u] : ")
-                winData3.refresh()
-                win_data_ret = curses.newwin(1, 10, 19, 76)
-                curses.echo()
-                box = Textbox(win_data_ret)
-                box.edit()
-                q_user[2] = box.gather().strip().replace("\n", "")
-
-
-                winData3.addstr(1, 0, "Syringe Radius in [mm] : ")
-                win_data_ret.clear()
-                win_data_ret.mvwin(20,55)
-                winData3.refresh()
-                box.edit()
-                radius_user[2] = box.gather().strip().replace("\n", "")
-
-
-                winData3.addstr(2, 0, "Direction ?        | FWD | REV | ? ")
-                win_data_ret.clear()
-                winData3.refresh()
-
-                winData3.attroff(WHITE_AND_MAGENTA)     
-                winData3.attron(WHITE_AND_GREEN)
-
-                            # collect data
-                curses.noecho()
-                winData3.nodelay(True)
-                q = 0
-                key = ""
-                while key != 'w':
-                    try:
-                        key = winData3.getkey()
-                    except:
-                        key = None
-
-                    if key == 'a':
-                        if q > 0:
-                            q -= 1
-                        
-                    elif key == 'd':
-                        if q < 1:
-                            q += 1
-
-                    winData3.attroff(WHITE_AND_GREEN)     
-                    winData3.attron(WHITE_AND_MAGENTA)
-                    winData3.addstr(2, 0, "Direction ?        | FWD | REV | ? ")
-                    winData3.attroff(WHITE_AND_MAGENTA)     
-                    winData3.attron(WHITE_AND_GREEN)
-
-                    if q == 0:
-                        winData3.addstr(2, 19, "| FWD |")
-                        dir_user[2] = 1                         
-                    
-                    elif q == 1:
-                        winData3.addstr(2, 25, "| REV |")
-                        dir_user[2] = 0                    
-
-                    winData3.refresh()
-                    sleep(0.75)
-
-            # User sel RUN function
-            elif poll_user[2] == 2:
-                winData3 = curses.newwin(5, 60, 19, 30)
-                winData3.attron(WHITE_AND_MAGENTA)
-
-
-                winData3.addstr(0, 0, "Volumetric Flow Rate Q [nL/s] in [70n, 10u] : ")
-                winData3.refresh()
-                win_data_ret = curses.newwin(1, 10, 19, 76)
-                curses.echo()
-                box = Textbox(win_data_ret)
-                box.edit()
-                q_user[2] = box.gather().strip().replace("\n", "")
-
-
-                winData3.addstr(1, 0, "Syringe Radius in [mm] : ")
-                win_data_ret.clear()
-                win_data_ret.mvwin(20,55)
-                winData3.refresh()
-                box.edit()
-                radius_user[2] = box.gather().strip().replace("\n", "")
-
-                winData3.addstr(2, 0, "Syringe Capacity in [mL] : ")
-                win_data_ret.clear()
-                win_data_ret.mvwin(21,58)
-                winData3.refresh()
-                box.edit()
-                cap_user[2] = box.gather().strip().replace("\n", "")
-
-                winData3.addstr(3, 0, "Hour # : ")
-                win_data_ret.clear()
-                win_data_ret.mvwin(22,40)
-                winData3.refresh()
-                box.edit()
-                hour_user[2] = box.gather().strip().replace("\n", "")
-
-                winData3.addstr(3, 16, "Minute # : ")
-                win_data_ret.clear()
-                win_data_ret.mvwin(22,58)
-                winData3.refresh()
-                box.edit()
-                min_user[2] = box.gather().strip().replace("\n", "")
-
-                winData3.addstr(3, 35, "Second # : ")
-                win_data_ret.clear()
-                win_data_ret.mvwin(22,77)
-                winData3.refresh()
-                box.edit()
-                sec_user[2] = box.gather().strip().replace("\n", "")
-
-
-                winData3.addstr(4, 0, "Direction ?        | FWD | REV | ? ")
-                win_data_ret.clear()
-                winData3.refresh()
-
-                winData3.attroff(WHITE_AND_MAGENTA)     
-                winData3.attron(WHITE_AND_GREEN)
-
-                            # collect data
-                curses.noecho()
-                winData3.nodelay(True)
-                q = 0
-                key = ""
-                while key != 'w':
-                    try:
-                        key = winData3.getkey()
-                    except:
-                        key = None
-
-                    if key == 'a':
-                        if q > 0:
-                            q -= 1
-                        
-                    elif key == 'd':
-                        if q < 1:
-                            q += 1
-
-                    winData3.attroff(WHITE_AND_GREEN)     
-                    winData3.attron(WHITE_AND_MAGENTA)
-                    winData3.addstr(4, 0, "Direction ?        | FWD | REV | ? ")
-                    winData3.attroff(WHITE_AND_MAGENTA)     
-                    winData3.attron(WHITE_AND_GREEN)
-
-                    if q == 0:
-                        winData3.addstr(4, 19, "| FWD |")
-                        dir_user[2] = 1                         
-                    
-                    elif q == 1:
-                        winData3.addstr(4, 25, "| REV |")
-                        dir_user[2] = 0                    
-
-                    winData3.refresh()
-                    sleep(0.5)
-
-        winData4 = curses.newwin(1, 46, 25, 35)
 
     # JOG-RUN metrics
     elif reqGUI == RUN:
+        pass
+
+    elif reqGUI == ERROR:
         pass
 
     else:
