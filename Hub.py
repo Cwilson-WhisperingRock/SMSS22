@@ -62,15 +62,29 @@ def main():
     ARD_ADD_3 = 0x42
     address = [ARD_ADD_1, ARD_ADD_2, ARD_ADD_3]
 
-    # Dictating codes 
-    POLLDATA =  1                        # Ard will rec[OFF, JOG, START] 
-    Q_DATA  = 2                          # Ard will rec[q_user]
-    R_DATA  = 3                          # Ard will rec[syr_radius_user]
-    CAP_DATA = 4                        # Ard will rec[syr_capacity]
-    DUR_DATA = 5                        # Ard will rec[hour_user, min_user, sec_user]
-    DIR_DATA = 6                        # Ard will rec[DIRECTION]
-    FEEDBACK = 7                        # Pi is requesting feedback str for error messages
+    # Pi's Dictating (main) codes 
+    POLLDATA =  1                       # Ard will recv[OFF, JOG, START] 
+    Q_DATA  = 2                         # Ard will recv[q_user]
+    R_DATA  = 3                         # Ard will recv[syr_radius_user]
+    CAP_DATA = 4                        # Ard will recv[syr_capacity]
+    DUR_DATA = 5                        # Ard will recv[hour_user, min_user, sec_user]
+    DIR_DATA = 6                        # Ard will recv[DIRECTION]
+    EVENT_DATA = 7                      # Ard will recv[true - proceed to RUN from DATAPULL]
+    ESTOP_DATA = 8                      # Ard will recv[true - ESTOP condition]
 
+    # Arduino's Requested (Sub) codes                       
+    LARGE_ERR = 0x3                     # User req too large (Q) for hardware constraints
+    SMALL_ERR = 0x4                     # User req too small (Q) for hardware constraints
+    DUR_ERR = 0x5                       # User req too long (time) for hardware constraints
+    LD_ERR = 0x6                        # User too large and long
+    SD_ERR = 0x7                        # User too small and long
+    DICT_ERR = 0x8                      # Wrong dictating codes
+    NO_ERR = 0x10                       # No error to report
+
+    WAIT_CODE = 0x15                    # Ard needs time to pull data and validate 
+    FINISH_CODE=  0x16                  # Ard's duration has been reached and finished RUN_S
+    TIME_CODE =  0x17                   # Ard is not done with RUN_S and will return time(h,m,s) if prompted
+    
     #availability of arduino deivces 0 = false, 1 = true
     global rollcall
     rollcall = [0,0,0]
