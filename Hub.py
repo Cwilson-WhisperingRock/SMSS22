@@ -3,7 +3,7 @@
 # SMSS Hub Controller V1.0
 
 
-#from smbus2 import SMBus, i2c_msg        # I2C library
+from smbus2 import SMBus,i2c_msg                 # I2C library
 from time import sleep                   # python delay
 
 from transitions import Machine          # state machine
@@ -94,16 +94,16 @@ def main():
     EVENT_DATA = 7                      # Ard will proceed RUN
     ESTOP_DATA = 8                      # Ard will proceed to STOP
 
-    # Arduino's Requested (Sub) codes 
+    # Arduino's Requested (Sub) codes
     global user_code
-    #user_code = 0                       # working variable
-    user_code = NO_ERR
+    user_code = 0                       # working variable
+    #user_code = NO_ERR
 
 
     #availability of arduino deivces 0 = false, 1 = true
     global rollcall
-    #rollcall = [0,0,0]
-    rollcall = [1,1,1]
+    rollcall = [0,0,0]
+    #rollcall = [1,1,1]
 
     # GUI Window constants
     global column
@@ -128,7 +128,7 @@ def main():
         if Hub.state == 'START' :
 
             #Identify devices on the buffer
-            #rollcall = deviceRollcall(address)
+            rollcall = deviceRollcall(address)
             sleep(1)
 
             #Display GUI background frame
@@ -151,7 +151,7 @@ def main():
                     column = COL_CONST * i + COL_OFFSET
                     curs(stdscr)
                     #print(f"{poll_user[i]}")
-                    #transmit_block(address[i], POLLDATA, poll_user[i] )
+                    transmit_block(address[i], POLLDATA, poll_user[i] )
                     pass
                 else:
                     #print("Dont got'em")
@@ -188,32 +188,32 @@ def main():
                             # if device is in JOG
                             if poll_user[i] == 1:
                                 # transmit variables
-                                #transmit_block(address[i], Q_DATA, int(q_user[i]))
-                                #transmit_block(address[i], R_DATA, int(radius_user[i]) )
-                                #transmit_block(address[i], DIR_DATA, int(dir_user[i]) )
-                                pass
+                                transmit_block(address[i], Q_DATA, int(q_user[i]))
+                                transmit_block(address[i], R_DATA, int(radius_user[i]) )
+                                transmit_block(address[i], DIR_DATA, int(dir_user[i]) )
+                                #pass
                         
                                        
                             # if device is in RUN
                             elif poll_user[i] == 2:
-                                #transmit_block(address[i], Q_DATA, int(q_user[i]) )
-                                #transmit_block(address[i], R_DATA, int(radius_user[i]) )
-                                #transmit_block(address[i], CAP_DATA, int(cap_user[i]) )
-                                #transmit_block(address[i], DUR_DATA, int(hour_user[i]) )
-                                #transmit_block(address[i], DUR_DATA, int(min_user[i]) )
-                                #transmit_block(address[i], DUR_DATA, int(sec_user[i]) )
-                                #transmit_block(address[i], DIR_DATA, int(dir_user[i]) )
-                                pass
+                                transmit_block(address[i], Q_DATA, int(q_user[i]) )
+                                print(int(q_user[i]) )
+                                sleep(5)
+                                transmit_block(address[i], R_DATA, int(radius_user[i]) )
+                                transmit_block(address[i], CAP_DATA, int(cap_user[i]) )
+                                transmit_block(address[i], DUR_DATA, int(hour_user[i]) )
+                                transmit_block(address[i], DUR_DATA, int(min_user[i]) )
+                                transmit_block(address[i], DUR_DATA, int(sec_user[i]) )
+                                transmit_block(address[i], DIR_DATA, int(dir_user[i]) )
+                                #pass
  
 
-                        '''
 
                         # read bus for error codes
                         with SMBus(1) as bus: 
                             user_code = bus.read_byte(address[i], 0)
 
                         
-                        '''
 
                         # if user selected to go back
                         if dir_user[i] == 2:
@@ -234,6 +234,7 @@ def main():
                         elif user_code == REDO_ERR:
                             reqGUI = POLL
                             curs(stdscr)
+                            transmit_block(address[i], POLLDATA, poll_user[i] )
                             reqGUI = DATA
                             curs(stdscr)
                             data_preserve = False
@@ -274,7 +275,7 @@ def main():
 
 
     
-'''
+
         
 
 # transmit__block()
@@ -310,6 +311,8 @@ def recv_block(addr):
             stor[2] = bus.read_byte(ARD_ADD_3, 0)
 
         return stor
+    
+'''
    
 '''
 
@@ -330,7 +333,7 @@ def deviceRollcall(myaddress):
             try:
                 bus.write_byte(myaddress[i], 0)
                 dev_status[i] = 1
-                print(f"Device {i} on bus")
+                #print(f"Device {i} on bus")
             except:
                 #print(f"Device {i} not on bus")
                 dev_status[i] = 0
