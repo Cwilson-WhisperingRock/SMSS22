@@ -802,6 +802,7 @@ void validDur_Start(float Q,float Vol, unsigned int Time){
         
           // Go to STANDBY is user sel to go back
           if(motor_dir == 2){
+            poll_user = 0;              // reset user seletion
             digitalWrite(BLUE, LOW);                                             
             state = STANDBY;}
 
@@ -982,7 +983,7 @@ void validDur_Start(float Q,float Vol, unsigned int Time){
   
       #ifdef TESTING
       Serial.print("recData : ");
-      Serial.println(recData);
+      Serial.println(recData, HEX); 
       Serial.print("numBytes : ");
       Serial.println(numBytes_TX);
       #endif
@@ -1130,6 +1131,10 @@ void validDur_Start(float Q,float Vol, unsigned int Time){
         datapull_flag = false;  
       }
       Wire.write(error_code);}                              // TX error
+      #ifdef TESTING
+        Serial.print("Error code :");
+        Serial.println(error_code, HEX);
+      #endif
   }
 
 
