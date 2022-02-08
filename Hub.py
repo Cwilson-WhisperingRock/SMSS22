@@ -30,7 +30,7 @@ class HubMachine(object):
         self.machine.add_transition(trigger = 'REBOOT', source = '*', dest = 'RESET')
 
 # States for GUI
-global FRAME, POLL, DATA, RUN, ERROR, USER_CONFIRM
+global FRAME, POLL, DATA, RUN, ERROR, USER_CONFIRM, USER_ESTOP
 global reqGUI
 reqGUI = 0x0
 FRAME = 0x0
@@ -39,6 +39,7 @@ DATA = 0x2
 ERROR = 0x3
 RUN = 0x4
 USER_CONFIRM = 0x6
+USER_ESTOP = 0x7
 
 global column
 column = 0
@@ -46,7 +47,8 @@ column = 0
 
 # Data between user-curses-arduino
 global rollcall, poll_user, q_user, radius_user, cap_user
-global hour_user, min_user, sec_user, dir_user
+global hour_user, min_user, sec_user, dir_user, back_flag
+global estop_flag, ard_duration
 rollcall = [0, 0, 0]
 poll_user = [0, 0, 0]
 q_user = [0,0,0]
@@ -56,7 +58,9 @@ hour_user = [0,0,0]
 min_user = [0,0,0]
 sec_user = [0,0,0]
 dir_user = [0,0,0]                                              # 0 - REV, 1 - FWD 
-
+back_flag = [False, False, False]                               # User sel to go back
+estop_flag = [False, False, False]                              # User sel for device estop
+ard_duration = [[0,0,0], [0,0,0], [0,0,0]]                      # run time from ard
 
 # Arduino's Requested (Sub) codes 
 global LARGE_ERR, SMALL_ERR, DUR_ERR, LD_ERR, SD_ERR, DICT_ERR, NO_ERR
@@ -69,7 +73,6 @@ LD_ERR = 0x6                        # User too large and long
 SD_ERR = 0x7                        # User too small and long
 DICT_ERR = 0x8                      # Wrong dictating codes
 NO_ERR = 0x10                       # No error to report
-
 WAIT_CODE = 0x15                    # Ard needs time to pull data and validate 
 FINISH_CODE=  0x16                  # Ard's duration has been reached and finished RUN_S
 TIME_CODE =  0x17                   # Ard is not done with RUN_S and will return time(h,m,s) if prompted
@@ -115,7 +118,7 @@ def main():
 
     # GUI command codes
     #global FRAME, POLL, DATA, RUN, ERROR, USER_CONFIRM
-    #global reqGUI
+    global reqGUI
 
     #curses window
     stdscr = curses.initscr()
@@ -271,14 +274,36 @@ def main():
 
             for i in range(3):
 
-                # if device is on bus
+                # print RUN screen
                 if rollcall[i] > 0:
 
-                    #print curse window + datapull
+                    #print curse window 
                     #global column
                     column = COL_CONST * i + COL_OFFSET
                     reqGUI = RUN
                     curs(stdscr)
+
+            # if at least one device is still on
+            while (poll_user[0] != 0 or  poll_user[1] != 0  or  poll_user[2] != 0) :
+
+                for i in range(3):
+
+                    # if device is on
+                    if (rollcall[i] > 0 and poll_user[i] > 0):
+
+
+                        # Ask for an ESTOP
+                        column = COL_CONST * i + COL_OFFSET
+
+                        reqGUI = USER_ESTOP
+                        curs(stdscr)
+
+                        
+
+                        # else if in START, poll ARD for FINISH <- RX (stops polling that ard and wait)
+                            #if not FINISH, get duratrion
+                    
+
 
 
         elif Hub.state == 'RESET' : 
@@ -360,7 +385,7 @@ def deviceRollcall(myaddress):
 
 def curs(stdscr):
 
-    global FRAME, POLL, DATA, RUN, ERROR, USER_CONFIRM
+    global FRAME, POLL, DATA, RUN, ERROR, USER_CONFIRM, USER_ESTOP
     global reqGUI
     global rollcall, poll_user, q_user, radius_user, cap_user
     global hour_user, min_user, sec_user, dir_user
@@ -719,12 +744,10 @@ def curs(stdscr):
                     sleep(0.5)
                 
 
-
-
     # JOG-RUN metrics
     elif reqGUI == RUN:
 
-        #avoiding a global index here people...forgive me coding gods
+            #avoiding a global index here people...forgive me coding gods
             index_gui = int((column-5)/7)
 
             # User wants to disable the device (leave in standby - no update)
@@ -754,6 +777,38 @@ def curs(stdscr):
                 winRun1.refresh()
                
             sleep(0.5)
+
+
+    # Simple ESTOP button
+    elif reqGUI == USER_ESTOP:
+
+        #avoiding a global index here people...forgive me coding gods
+        index_gui = int((column-5)/7)
+
+        # display window
+        winPoll4 = curses.newwin(5, 60, column, 30)
+        curses.noecho()
+        winPoll4.nodelay(True)
+        winPoll4.clear()
+        winPoll4.attron(YELLOW_AND_CYAN)
+        winPoll4.addstr(4, 18, "| ESTOP |")
+        winPoll4.refresh()
+            
+        key = ""
+
+        try:
+            key = winPoll4.getkey()
+        except:
+            key = None
+                
+        winPoll4.refresh()
+
+        if key == 'w':
+            global estop_flag
+            estop_flag[index_gui] = True
+
+        sleep(0.5)
+
 
     elif reqGUI == ERROR:
         pass
