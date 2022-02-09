@@ -3,7 +3,7 @@
 # SMSS Hub Controller V1.0
 
 
-#from smbus2 import SMBus,i2c_msg                 # I2C library
+from smbus2 import SMBus,i2c_msg                 # I2C library
 from time import sleep                   # python delay
 
 from transitions import Machine          # state machine
@@ -64,7 +64,8 @@ ard_duration = [[0,0,0], [0,0,0], [0,0,0]]                      # run time from 
 
 # Arduino's Requested (Sub) codes 
 global LARGE_ERR, SMALL_ERR, DUR_ERR, LD_ERR, SD_ERR, DICT_ERR, NO_ERR
-global WAIT_CODE, FINISH_CODE, TIME_CODE, user_code
+global WAIT_CODE, FINISH_CODE, TIME_CODE, REDO_CODE
+global user_code
 
 LARGE_ERR = 0x3                     # User req too large (Q) for hardware constraints
 SMALL_ERR = 0x4                     # User req too small (Q) for hardware constraints
@@ -96,28 +97,25 @@ def main():
     DIR_DATA = 6                        # Ard will recv[DIRECTION]
     EVENT_DATA = 7                      # Ard will proceed RUN
     ESTOP_DATA = 8                      # Ard will proceed to STOP
+    REDO_DATA = 9                       # ARd will revert back to STANDBY from DATAPULL
 
     # Arduino's Requested (Sub) codes
     global user_code
-    #user_code = 0                       # working variable
-    user_code = NO_ERR
+    user_code = 0                       # working variable
+    #user_code = NO_ERR
 
 
     #availability of arduino deivces 0 = false, 1 = true
     global rollcall
-    #rollcall = [0,0,0]
-    rollcall = [1,1,1]
+    rollcall = [0,0,0]
+    #rollcall = [1,1,1]
 
     # GUI Window constants
     global column
     COL_CONST = 7
     COL_OFFSET = 5
 
-    #redo error code 
-    REDO_ERR = 0x25
-
     # GUI command codes
-    #global FRAME, POLL, DATA, RUN, ERROR, USER_CONFIRM
     global reqGUI
 
     #curses window
@@ -131,7 +129,7 @@ def main():
         if Hub.state == 'START' :
 
             #Identify devices on the buffer
-            #rollcall = deviceRollcall(address)
+            rollcall = deviceRollcall(address)
             sleep(1)
 
             #Display GUI background frame
@@ -154,14 +152,14 @@ def main():
                     column = COL_CONST * i + COL_OFFSET
                     curs(stdscr)
                     #print(f"{poll_user[i]}")
-                    #transmit_block(address[i], POLLDATA, poll_user[i] )
-                    pass
+                    transmit_block(address[i], POLLDATA, poll_user[i] )
+                    #pass
                 else:
                     #print("Dont got'em")
                     pass
             
             #loop if all devices are off
-            if all(v == 0 for v in poll_user):
+            if (poll_user[0] == 0 and poll_user[1] == 0 and poll_user[2] == 0) :
                 pass
 
             # Change states to DATAPULL
@@ -172,84 +170,91 @@ def main():
 
 
         elif Hub.state == 'DATAPULL' :
-
-            loop = True                 # loop to weed out user error
-            data_preserve = False       # flag to redo user data
-
+            
             for i in range(3):
 
-                # if device is on bus
-                if rollcall[i] > 0:
+                # if device is active
+                if poll_user[i] > 0:
 
+                    loop = True                 # loop to weed out user error
+                    data_preserve = False       # flag to redo user data
+                    
                     #print curse window + datapull
-                    #global column
                     column = COL_CONST * i + COL_OFFSET
                     reqGUI = DATA
                     curs(stdscr)
 
                     # loop until all errors are out
                     while loop == True:
+                        
+                        # if user selected to go back
+                        if back_flag[i] == True:
+                            
+                             #reset flag
+                            back_flag[i] = False
 
-                        # Send existing data or trash
+                            # transmit redo flag
+                            transmit_block(address[i], REDO_DATA, True )
+                            
+                            # collect data again
+                            reqGUI = POLL
+                            curs(stdscr)
+                            transmit_block(address[i], POLLDATA, poll_user[i] )
+                            reqGUI = DATA
+                            curs(stdscr)
+
+                            #loop to transmit again
+                            data_preserve = False    # TX data to ard again
+                            loop = True              #error code loop still valid
+
+                            #if user turns off device in redo
+                            if poll_user[i] == 0:
+                                 data_preserve = True
+                                 loop = False
+                        
+
+                        # Send existing data or trash data
                         if data_preserve == False:
 
                             # if device is in JOG
                             if poll_user[i] == 1:
                                 # transmit variables
-                                #transmit_block(address[i], Q_DATA, int(q_user[i]))
-                                #transmit_block(address[i], R_DATA, int(radius_user[i]) )
-                                #transmit_block(address[i], DIR_DATA, int(dir_user[i]) )
-                                pass
+                                transmit_block(address[i], Q_DATA, int(q_user[i]))
+                                transmit_block(address[i], R_DATA, int(radius_user[i]) )
+                                transmit_block(address[i], DIR_DATA, int(dir_user[i]) )
+                            
+                                
+                                #pass
                         
                                        
                             # if device is in RUN
                             elif poll_user[i] == 2:
-                                #transmit_block(address[i], Q_DATA, int(q_user[i]) )
+                                transmit_block(address[i], Q_DATA, int(q_user[i]) )
                                 #print(int(q_user[i]) )
-                                #sleep(5)
-                                #transmit_block(address[i], R_DATA, int(radius_user[i]) )
-                                #transmit_block(address[i], CAP_DATA, int(cap_user[i]) )
-                                #transmit_block(address[i], DUR_DATA, int(hour_user[i]) )
-                                #transmit_block(address[i], DUR_DATA, int(min_user[i]) )
-                                #transmit_block(address[i], DUR_DATA, int(sec_user[i]) )
-                                #transmit_block(address[i], DIR_DATA, int(dir_user[i]) )
-                                pass
- 
+                                sleep(5)
+                                transmit_block(address[i], R_DATA, int(radius_user[i]) )
+                                transmit_block(address[i], CAP_DATA, int(cap_user[i]) )
+                                transmit_block(address[i], DUR_DATA, int(hour_user[i]) )
+                                transmit_block(address[i], DUR_DATA, int(min_user[i]) )
+                                transmit_block(address[i], DUR_DATA, int(sec_user[i]) )
+                                transmit_block(address[i], DIR_DATA, int(dir_user[i]) )
 
 
                         # read bus for error codes
-                        #with SMBus(1) as bus: 
-                        #    user_code = bus.read_byte(address[i], 0)
+                        with SMBus(1) as bus: 
+                            user_code = bus.read_byte(address[i], 0)
 
-                        
-
-                        # if user selected to go back
-                        if dir_user[i] == 2:
-                            user_code = REDO_ERR
-
-                            
-
+                           
                         # pass if no errors are present
                         if user_code == NO_ERR:
+                            data_preserve = False
                             loop = False
+                           
 
-                        # loop if told to wait
+                         # loop if told to wait (and check again for errors)
                         elif user_code == WAIT_CODE:
                             data_preserve = True
                             loop = True
-                            pass
-
-                        elif user_code == REDO_ERR:
-                            reqGUI = POLL
-                            curs(stdscr)
-                            #transmit_block(address[i], POLLDATA, poll_user[i] )
-                            reqGUI = DATA
-                            curs(stdscr)
-                            data_preserve = False
-                            loop = True
-
-                            # DONT FORGET TO GET RID OF THISSSSS!!!!
-                            user_code = NO_ERR
 
                         # proceed to error screen and loop this again
                         else:
@@ -257,7 +262,8 @@ def main():
                                 curs(stdscr)
                                 data_preserve = False
                                 loop = True
-                                pass
+                                print("SHouldnt be here yet")
+                                
                         
 
 
@@ -265,8 +271,8 @@ def main():
             # if all present devices have tickets, Hub.EVENTSTART()
             reqGUI = USER_CONFIRM
             curs(stdscr)
-            #with SMBus(1) as bus:
-            #    bus.write_byte(address[i],  EVENT_DATA)
+            with SMBus(1) as bus:
+                bus.write_byte(address[i],  EVENT_DATA)
             Hub.EVENTSTART()
 
 
@@ -316,7 +322,7 @@ def main():
             pass
 
 
-    
+    '''
 '''
         
 
@@ -382,7 +388,7 @@ def deviceRollcall(myaddress):
     return dev_status
 
 ''' 
-
+'''
 def curs(stdscr):
 
     global FRAME, POLL, DATA, RUN, ERROR, USER_CONFIRM, USER_ESTOP
@@ -639,7 +645,7 @@ def curs(stdscr):
                         
                     elif q == 2:
                         winData1.addstr(2, 31, "| REDO |")
-                        dir_user[index_gui] = 2
+                        back_flag[index_gui] = True
 
                     winData1.refresh()
                     sleep(0.5)
@@ -738,7 +744,7 @@ def curs(stdscr):
                         
                     elif q == 2:
                         winData1.addstr(4, 31, "| REDO |")
-                        dir_user[index_gui] = 2
+                        back_flag[index_gui] = True
 
                     winData1.refresh()
                     sleep(0.5)
