@@ -139,6 +139,7 @@ unsigned long time_stamp_end = 0;           // "
   #define DIR_DATA 6                        // Ard will recv[DIRECTION]
   #define EVENT_DATA 7                      // Ard will proceed to RUN
   #define ESTOP_DATA 8                      // Ard will proceed to STOP
+  #define REDO_DATA 9                       // Ard will reset to STANDBY from DATAPULL
 
   // Arduino's Requested (Sub) codes                       
   #define LARGE_ERR 0x3                     // User req too large (Q) for hardware constraints
@@ -153,6 +154,8 @@ unsigned long time_stamp_end = 0;           // "
   #define WAIT_CODE 0x15                    // Ard needs time to pull data and validate 
   #define FINISH_CODE 0x16                  // Ard's duration has been reached and finished RUN_S
   #define TIME_CODE 0x17                    // Ard is not done with RUN_S and will return time(h,m,s) if prompted
+  #define REDO_CODE 0x18
+  bool redo_flag = false;
   bool time_flag = false;                   // bool to help with req time code [ true - sent TIME_CODE already]
 
 
@@ -790,8 +793,10 @@ void validDur_Start(float Q,float Vol, unsigned int Time){
 
         digitalWrite(BLUE, HIGH);                                                 // LED indicator
 
+        if(redo_flag == true){state = STOP;}
+
         // if all data has been pulled from Pi, process and find errors (if exist)
-        if(dp_checkpoint == false && datapull_flag == true){                                                
+        else if(dp_checkpoint == false && datapull_flag == true){                                                
 
           // Process variables for valid TICKET and check for errors
           duration = ( (3600 * hour_user) + (60 * min_user) + sec_user) * 1000;   // entire duration in msec for easy compare later
@@ -833,8 +838,10 @@ void validDur_Start(float Q,float Vol, unsigned int Time){
         digitalWrite(BLUE, HIGH);                                               // LED indicator
         digitalWrite(WHITE, HIGH);                                              // LED indicator
 
+        if(redo_flag == true){state = STOP;}
+        
         // if all data has been pulled from Pi, process and find errors (if exist)
-        if(dp_checkpoint == false && datapull_flag == true){
+        else if(dp_checkpoint == false && datapull_flag == true){
             freq =  Q_to_Freq(q_user, syr_radius_user);                             // Get period from Q
             freq = MicroCali(freq);                                                 // Calibrate microstepping & TICKET validation
             
@@ -932,6 +939,10 @@ void validDur_Start(float Q,float Vol, unsigned int Time){
     
         Timer1.disablePwm(STEP);                                             // turn off motor
 
+        digitalWrite(GREEN, LOW);                                               // LED indicator
+        digitalWrite(WHITE, LOW);
+        digitalWrite(YELLOW, LOW);                                               // LED indicator
+        digitalWrite(BLUE, LOW);
         q_user = 0;                                                   
         syr_radius_user = 0;
         freq = 0;
@@ -949,6 +960,7 @@ void validDur_Start(float Q,float Vol, unsigned int Time){
         FINISH = false;
         datapull_flag = false; 
         time_flag = false;
+        redo_flag = false;
 
         poll_user = 0;                       
         error_code = NO_ERR;
@@ -1054,6 +1066,13 @@ void validDur_Start(float Q,float Vol, unsigned int Time){
           case EVENT_DATA:
             eventstart = true;             
             recData = 0;                      
+            break;
+
+          case REDO_DATA:
+            redo_flag = Wire.read(); 
+            Serial.println("STOPPED");
+            state = STOP;            
+            recData = 0;
             break;
 
           case ESTOP_DATA:
