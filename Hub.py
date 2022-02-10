@@ -4,7 +4,7 @@
 
 
 from time import sleep                   # python delay
-
+from smbus2 import SMBus, i2c_msg
 from transitions import Machine          # state machine
 
 import curses                            # GUI
@@ -27,8 +27,8 @@ class HubMachine(object):
         self.machine.add_transition(trigger = 'CONFIRM', source = 'START', dest = 'DATAPULL')
         self.machine.add_transition(trigger = 'EVENTSTART', source = 'DATAPULL', dest = 'RUN')
         self.machine.add_transition(trigger = 'DONE', source = 'RUN', dest = 'RESET')
-        self.machine.add_transition(trigger = 'RETURN', source = 'RESET', dest = 'START')
-        self.machine.add_transition(trigger = 'REBOOT', source = '*', dest = 'RESET')
+        self.machine.add_transition(trigger = 'RESTART', source = 'RESET', dest = 'START')
+
 
 # States for GUI
 global FRAME, POLL, DATA, RUN, ERROR, USER_CONFIRM, USER_ESTOP
@@ -86,6 +86,10 @@ TIME_CODE =  0x17                   # Ard is not done with RUN_S and will return
 user_code = 0                       # working variable
     
 def main():
+
+    global rollcall, poll_user, q_user, radius_user, cap_user
+    global hour_user, min_user, sec_user, dir_user, back_flag
+    global estop_flag, ard_duration
     
     # I2C Addresses
     PI_ADD = 0x01                       
@@ -109,15 +113,13 @@ def main():
     
 
     # Arduino's Requested (Sub) codes
-    global user_code
-    #user_code = 0                       # working variable
-    user_code = NO_ERR
+    user_code = 0                       # working variable
+    #user_code = NO_ERR
 
 
     #availability of arduino deivces 0 = false, 1 = true
-    global rollcall
-    #rollcall = [0,0,0]
-    rollcall = [1,1,1]
+    rollcall = [0,0,0]
+    #rollcall = [1,1,1]
 
     # GUI Window constants
     global column
@@ -138,16 +140,18 @@ def main():
         if Hub.state == 'START' :
 
             #Identify devices on the buffer
-            #rollcall = deviceRollcall(address)
-            sleep(1)
+            rollcall = deviceRollcall(address)
 
             #Display GUI background frame
             global reqGUI
             reqGUI = FRAME
             curs(stdscr)
             
+            #reset devices
+            for i in range(3):
+                if rollcall[i] > 0:
+                    transmit_block(address[i], ESTOP_DATA, True )
 
-            
 
             # Write dictation code + poll_user
             for i in range(3):
@@ -159,13 +163,14 @@ def main():
                 if rollcall[i] > 0:
                     global column
                     column = COL_CONST * i + COL_OFFSET
+                    
                     curs(stdscr)
-                    #print(f"{poll_user[i]}")
-                    #transmit_block(address[i], POLLDATA, poll_user[i] )
-                    pass
+                    #print(f"Poll_user{i} = {poll_user[i]}")
+                    transmit_block(address[i], POLLDATA, poll_user[i] )
+                    
                 else:
-                    #print("Dont got'em")
-                    pass
+                    print("Dont got'em")
+                    
             
             #loop if all devices are off
             if (poll_user[0] == 0 and poll_user[1] == 0 and poll_user[2] == 0) :
@@ -205,12 +210,12 @@ def main():
                             back_flag[i] = False
 
                             # transmit redo flag
-                            #transmit_block(address[i], REDO_DATA, True )
+                            transmit_block(address[i], REDO_DATA, True )
                             
                             # collect data again
                             reqGUI = POLL
                             curs(stdscr)
-                            #transmit_block(address[i], POLLDATA, poll_user[i] )
+                            transmit_block(address[i], POLLDATA, poll_user[i] )
                             reqGUI = DATA
                             curs(stdscr)
 
@@ -229,23 +234,21 @@ def main():
                             # if device is in JOG
                             if poll_user[i] == 1:
                                 # transmit variables
-                                #transmit_block(address[i], Q_DATA, int(q_user[i]))
-                                #transmit_block(address[i], R_DATA, int(radius_user[i]) )
-                                #transmit_block(address[i], DIR_DATA, int(dir_user[i]) )
-                            
-                                
-                                pass
+                                transmit_block(address[i], Q_DATA, int(q_user[i]))
+                                transmit_block(address[i], R_DATA, int(radius_user[i]) )
+                                transmit_block(address[i], DIR_DATA, int(dir_user[i]) )
+                                #pass
                         
                                        
                             # if device is in RUN
                             elif poll_user[i] == 2:
-                                #transmit_block(address[i], Q_DATA, int(q_user[i]) )
-                                #transmit_block(address[i], R_DATA, int(radius_user[i]) )
-                                #transmit_block(address[i], CAP_DATA, int(cap_user[i]) )
-                                #transmit_block(address[i], DUR_DATA, int(hour_user[i]) )
-                                #transmit_block(address[i], DUR_DATA, int(min_user[i]) )
-                                #transmit_block(address[i], DUR_DATA, int(sec_user[i]) )
-                                #transmit_block(address[i], DIR_DATA, int(dir_user[i]) )
+                                transmit_block(address[i], Q_DATA, int(q_user[i]) )
+                                transmit_block(address[i], R_DATA, int(radius_user[i]) )
+                                transmit_block(address[i], CAP_DATA, int(cap_user[i]) )
+                                transmit_block(address[i], DUR_DATA, int(hour_user[i]) )
+                                transmit_block(address[i], DUR_DATA, int(min_user[i]) )
+                                transmit_block(address[i], DUR_DATA, int(sec_user[i]) )
+                                transmit_block(address[i], DIR_DATA, int(dir_user[i]) )
 
                                 #print(int(q_user[i]))
                                 #print(int(radius_user[i]))
@@ -256,7 +259,7 @@ def main():
                                 #print(int(dir_user[i]))
                                 #sleep(5)
 
-                                pass
+                                #pass
 
                         #if user turns off device in redo
                         if poll_user[i] == 0:
@@ -264,8 +267,8 @@ def main():
 
                         else:        
                             # read bus for error codes
-                            #with SMBus(1) as bus: 
-                            #    user_code = bus.read_byte(address[i], 0)
+                            with SMBus(1) as bus: 
+                                user_code = bus.read_byte(address[i], 0)
 
                            
                             # pass if no errors are present (exit condition)
@@ -294,28 +297,25 @@ def main():
             # if all present devices have tickets, Hub.EVENTSTART()
             reqGUI = USER_CONFIRM
             curs(stdscr)
-            #with SMBus(1) as bus:
-            #    bus.write_byte(address[i],  EVENT_DATA)
+            for i in range(3):
+                if poll_user[i] != 0:
+                    transmit_block(address[i], EVENT_DATA, True )
             Hub.EVENTSTART()
 
 
         elif Hub.state == 'RUN' :
 
-            for i in range(3):
-
-                # print RUN screen
-                if rollcall[i] > 0:
-
-                    #print curse window 
-                    #global column
-                    column = COL_CONST * i + COL_OFFSET
-                    reqGUI = RUN
-                    curs(stdscr)
 
             # if at least one device is still on
             while (poll_user[0] != 0 or  poll_user[1] != 0  or  poll_user[2] != 0) :
 
                 for i in range(3):
+
+                    if rollcall[i] > 0:
+                        #print curse window 
+                        column = COL_CONST * i + COL_OFFSET
+                        reqGUI = RUN
+                        curs(stdscr)
 
                     # if device is on
                     if (rollcall[i] > 0 and poll_user[i] > 0):
@@ -323,37 +323,61 @@ def main():
 
                         # Ask for an ESTOP
                         column = COL_CONST * i + COL_OFFSET
-
                         reqGUI = USER_ESTOP
                         curs(stdscr)
 
+                        #if user selected to stop
                         if estop_flag[i] == True:
+                            
                             #transmit estop to ard
-                            #transmit_block(address[i], ESTOP_DATA, True )
+                            transmit_block(address[i], ESTOP_DATA, True )
 
-                            #Put device (in pi) in stand by
+                            #Put device (in pi) in standby
                             poll_user[i] = 0
 
-                        # else if in START, poll ARD for FINISH <- RX (stops polling that ard and wait)
+                        # else poll ARD for FINISH/ time remaining
                         elif poll_user[i] == 2:
-                            #with SMBus(1) as bus: 
-                            #    user_code = bus.read_byte(address[i], 0)
 
-                                #if not FINISH, get duratrion
-                                if user_code == FINISH_CODE:
-                                    poll_user[i] = 0
-                                elif user_code == TIME_CODE:
-                                    pass
-                    
+                            # Read ard to see its status (FINISH or !FINISH)
+                            with SMBus(1) as bus: 
+                                user_code = bus.read_byte(address[i], 0)
 
-        elif Hub.state == 'RESET' : 
-            pass
+                            #if FINISH, dont repoll device
+                            if user_code == FINISH_CODE:
+                                poll_user[i] = 0
+                                    
+                            elif user_code == TIME_CODE:
+                                
+                                global ard_duration
+                                
+                                with SMBus(1) as bus:
+                                    
+                                    for j in range(3):
 
-        elif Hub.state == 'REBOOT' : 
-            pass
+                                        ard_duration[i][j]  = bus.read_byte(address[i], 0)
 
-        else: 
-            pass
+                                
+                                        
+            
+            Hub.DONE()
+
+        #reset variables
+        elif Hub.state == 'RUN' :
+            rollcall = [0, 0, 0]
+            poll_user = [0, 0, 0]
+            q_user = [0,0,0]
+            radius_user = [0,0,0]
+            cap_user = [0,0,0]
+            hour_user = [0,0,0]
+            min_user = [0,0,0]
+            sec_user = [0,0,0]
+            dir_user = [0,0,0]                                              # 0 - REV, 1 - FWD 
+            back_flag = [False, False, False]                               # User sel to go back
+            estop_flag = [False, False, False]                              # User sel for device estop
+            ard_duration = [[0,0,0], [0,0,0], [0,0,0]]                      # run time from ard
+            user_code = 0
+
+            Hub.RESET()
 
 
 def Error_2Str(error):
@@ -371,7 +395,7 @@ def Error_2Str(error):
     elif error == DICT_ERR:
         return "Error : Ard got lost...GULP"
 
-
+'''
 '''    
 
 # transmit__block()
@@ -395,7 +419,7 @@ def transmit_block(addr, dict_code, int_data):
     with SMBus(1) as bus:
         for i in range(6):
             bus.write_byte(addr, block[i])
-            sleep(0.1)
+            sleep(0.15)
 
             
 
@@ -444,12 +468,14 @@ def deviceRollcall(myaddress):
             except:
                 #print(f"Device {i} not on bus")
                 dev_status[i] = 0
-                pass
-        
+                #pass
+            
+    sleep(0.1)    
     return dev_status
 
-
 '''
+'''
+
 def curs(stdscr):
 
     global FRAME, POLL, DATA, RUN, ERROR, USER_CONFIRM, USER_ESTOP
@@ -543,9 +569,8 @@ def curs(stdscr):
     # Poll user for device run modes
     elif reqGUI == POLL:
 
+        global poll_user
         #avoiding a global index here people...forgive me coding gods
-
-        
         index_gui = int((column-5)/7)
 
 
@@ -557,7 +582,6 @@ def curs(stdscr):
             winPoll1.clear()
             winPoll1.attron(BLACK_AND_GREEN)
             winPoll1.addstr(1, 5, "Device 1 Mode :      | OFF | JOG | RUN |")
-            #winPoll1.addstr(3, 5, "Error Messages : ")
             winPoll1.refresh()
             
             # collect data
@@ -698,11 +722,13 @@ def curs(stdscr):
 
                     if q == 0:
                         winData1.addstr(2, 19, "| FWD |")
-                        dir_user[index_gui] = 1                         
+                        dir_user[index_gui] = 1
+                        back_flag[index_gui] = False
                     
                     elif q == 1:
                         winData1.addstr(2, 25, "| REV |")
-                        dir_user[index_gui] = 0 
+                        dir_user[index_gui] = 0
+                        back_flag[index_gui] = False
                         
                     elif q == 2:
                         winData1.addstr(2, 31, "| REDO |")
@@ -797,11 +823,13 @@ def curs(stdscr):
 
                     if q == 0:
                         winData1.addstr(4, 19, "| FWD |")
-                        dir_user[index_gui] = 1                         
+                        dir_user[index_gui] = 1
+                        back_flag[index_gui] = False
                     
                     elif q == 1:
                         winData1.addstr(4, 25, "| REV |")
-                        dir_user[index_gui] = 0 
+                        dir_user[index_gui] = 0
+                        back_flag[index_gui] = False
                         
                     elif q == 2:
                         winData1.addstr(4, 31, "| REDO |")
@@ -839,7 +867,7 @@ def curs(stdscr):
 
                 winRun1.addstr(0, 0, f" Q [nL/s] : {q_user[index_gui]}    Syringe Radius in [mm] : {radius_user[index_gui]}")
                 winRun1.addstr(1, 0, f" Requested - Hour : {hour_user[index_gui]}    Minute : {min_user[index_gui]}   Second : {sec_user[index_gui]}")
-                winRun1.addstr(2, 0, " Elapsed - Hour :          Minute :        Second :      ")
+                winRun1.addstr(2, 0, f" Elapsed - Hour : {ard_duration[index_gui][0]}       Minute :  {ard_duration[index_gui][1]}     Second : {ard_duration[index_gui][2]}    ")
                 winRun1.addstr(4, 18, "| ESTOP |")
                 winRun1.refresh()
                
