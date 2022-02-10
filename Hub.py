@@ -12,6 +12,8 @@ import curses                            # GUI
 from curses import wrapper
 from curses.textpad import Textbox, rectangle
 
+import random
+
 
 
 class HubMachine(object):
@@ -44,6 +46,9 @@ USER_ESTOP = 0x7
 global column
 column = 0
 
+global BLOCK_DATA
+BLOCK_DATA = 10
+
 
 # Data between user-curses-arduino
 global rollcall, poll_user, q_user, radius_user, cap_user
@@ -64,7 +69,7 @@ ard_duration = [[0,0,0], [0,0,0], [0,0,0]]                      # run time from 
 
 # Arduino's Requested (Sub) codes 
 global LARGE_ERR, SMALL_ERR, DUR_ERR, LD_ERR, SD_ERR, DICT_ERR, NO_ERR
-global WAIT_CODE, FINISH_CODE, TIME_CODE, REDO_CODE
+global WAIT_CODE, FINISH_CODE, TIME_CODE
 global user_code
 
 LARGE_ERR = 0x3                     # User req too large (Q) for hardware constraints
@@ -77,6 +82,8 @@ NO_ERR = 0x10                       # No error to report
 WAIT_CODE = 0x15                    # Ard needs time to pull data and validate 
 FINISH_CODE=  0x16                  # Ard's duration has been reached and finished RUN_S
 TIME_CODE =  0x17                   # Ard is not done with RUN_S and will return time(h,m,s) if prompted
+
+
 user_code = 0                       # working variable
     
 def main():
@@ -98,6 +105,9 @@ def main():
     EVENT_DATA = 7                      # Ard will proceed RUN
     ESTOP_DATA = 8                      # Ard will proceed to STOP
     REDO_DATA = 9                       # ARd will revert back to STANDBY from DATAPULL
+    global BLOCK_DATA
+    BLOCK_DATA = 10
+    
 
     # Arduino's Requested (Sub) codes
     global user_code
@@ -181,11 +191,13 @@ def main():
                     
                     #print curse window + datapull
                     column = COL_CONST * i + COL_OFFSET
-                    reqGUI = DATA
-                    curs(stdscr)
+
 
                     # loop until all errors are out
                     while loop == True:
+
+                        reqGUI = DATA
+                        curs(stdscr)
                         
                         # if user selected to go back
                         if back_flag[i] == True:
@@ -210,7 +222,6 @@ def main():
                             #if user turns off device in redo
                             if poll_user[i] == 0:
                                  data_preserve = True
-                                 loop = False
                         
 
                         # Send existing data or trash data
@@ -230,8 +241,6 @@ def main():
                             # if device is in RUN
                             elif poll_user[i] == 2:
                                 transmit_block(address[i], Q_DATA, int(q_user[i]) )
-                                #print(int(q_user[i]) )
-                                sleep(5)
                                 transmit_block(address[i], R_DATA, int(radius_user[i]) )
                                 transmit_block(address[i], CAP_DATA, int(cap_user[i]) )
                                 transmit_block(address[i], DUR_DATA, int(hour_user[i]) )
@@ -239,30 +248,43 @@ def main():
                                 transmit_block(address[i], DUR_DATA, int(sec_user[i]) )
                                 transmit_block(address[i], DIR_DATA, int(dir_user[i]) )
 
+                                #print(int(q_user[i]))
+                                #print(int(radius_user[i]))
+                                #print(int(cap_user[i]))
+                                #print(int(hour_user[i]))
+                                #print(int(min_user[i]))
+                                #print(int(sec_user[i]))
+                                #print(int(dir_user[i]))
+                                #sleep(5)
 
-                        # read bus for error codes
-                        with SMBus(1) as bus: 
-                            user_code = bus.read_byte(address[i], 0)
-
-                           
-                        # pass if no errors are present
-                        if user_code == NO_ERR:
-                            data_preserve = False
+                        #if user turns off device in redo
+                        if poll_user[i] == 0:
                             loop = False
+
+                        else:        
+                            # read bus for error codes
+                            with SMBus(1) as bus: 
+                                user_code = bus.read_byte(address[i], 0)
+
                            
+                            # pass if no errors are present (exit condition)
+                            if user_code == NO_ERR:
+                                data_preserve = False
+                                loop = False
+                                    
 
-                         # loop if told to wait (and check again for errors)
-                        elif user_code == WAIT_CODE:
-                            data_preserve = True
-                            loop = True
+                            # loop if told to wait (and check again for errors)
+                            elif user_code == WAIT_CODE:
+                                data_preserve = True
+                                loop = True
 
-                        # proceed to error screen and loop this again
-                        else:
+                            # proceed to error screen and loop this again
+                            else:
                                 reqGUI = ERROR
                                 curs(stdscr)
                                 data_preserve = False
                                 loop = True
-                                print("SHouldnt be here yet")
+                        
                                 
                         
 
@@ -324,18 +346,48 @@ def main():
 
     '''
 '''
-        
+
+def Error_2Str(error):
+    
+    if error == LARGE_ERR:
+        return "Error: Flow rate too large for hardware"
+    elif error == SMALL_ERR:
+        return "Error : Flow rate too small for hardware"
+    elif error == DUR_ERR:
+        return "Error : Run time will ruin machine"
+    elif error == LD_ERR:
+        return "Error : Too large flow rate + time overflow"
+    elif error == SD_ERR:
+        return "Error : Too small of Q + time overflow"
+    elif error == DICT_ERR:
+        return "Error : Ard got lost...GULP"
+
+
+    
 
 # transmit__block()
 # SIGNATURE : int, int, int -> 
 # PURPOSE : Transmits a dictating code +  data to an address
 #           
 def transmit_block(addr, dict_code, int_data):
+
+    block = [BLOCK_DATA, dict_code, 0, int_data, 0, 0]
+    
+    i = 2
+    while int_data > 255:
+        block[i] = int(min(int_data / 256, 256))
+        block[i+1] = int(int_data % 256)
+        int_data /= 256
+        i += 2
+
+    
+
         
     with SMBus(1) as bus:
-        bus.write_byte(addr,  dict_code)
-        sleep(0.1)
-        bus.write_byte(addr,  int_data)
+        for i in range(6):
+            bus.write_byte(addr, block[i])
+            sleep(0.1)
+
             
 
 
@@ -403,8 +455,8 @@ def curs(stdscr):
     curses.init_pair(2, curses.COLOR_BLACK, curses.COLOR_WHITE)
     BLACK_AND_WHITE = curses.color_pair(2)
 
-    curses.init_pair(3, curses.COLOR_WHITE, curses.COLOR_GREEN)
-    WHITE_AND_GREEN = curses.color_pair(3)
+    curses.init_pair(3, curses.COLOR_BLACK, curses.COLOR_GREEN)
+    BLACK_AND_GREEN = curses.color_pair(3)
 
     curses.init_pair(4, curses.COLOR_YELLOW, curses.COLOR_CYAN)
     YELLOW_AND_CYAN = curses.color_pair(4)
@@ -494,9 +546,9 @@ def curs(stdscr):
             curses.noecho()
             winPoll1.nodelay(True)
             winPoll1.clear()
-            winPoll1.attron(WHITE_AND_GREEN)
+            winPoll1.attron(BLACK_AND_GREEN)
             winPoll1.addstr(1, 5, "Device 1 Mode :      | OFF | JOG | RUN |")
-            winPoll1.addstr(3, 5, "Error Messages : ")
+            #winPoll1.addstr(3, 5, "Error Messages : ")
             winPoll1.refresh()
             
             # collect data
@@ -506,7 +558,7 @@ def curs(stdscr):
             while key != 'w':
 
                 winPoll1.attroff(BLACK_AND_WHITE)     
-                winPoll1.attron(WHITE_AND_GREEN)
+                winPoll1.attron(BLACK_AND_GREEN)
                 winPoll1.addstr(1, 5, "Device 1 Mode :      | OFF | JOG | RUN |")
 
                 try:
@@ -524,19 +576,19 @@ def curs(stdscr):
 
 
                 if q == 0:
-                    winPoll1.attroff(WHITE_AND_GREEN)
+                    winPoll1.attroff(BLACK_AND_GREEN)
                     winPoll1.attron(BLACK_AND_WHITE)
                     winPoll1.addstr(1, 26, "| OFF |")
                     poll_user[index_gui] = 0                    # disable the device
                     
                 elif q == 1:
-                    winPoll1.attroff(WHITE_AND_GREEN)
+                    winPoll1.attroff(BLACK_AND_GREEN)
                     winPoll1.attron(BLACK_AND_WHITE)
                     winPoll1.addstr(1, 32, "| JOG |")
                     poll_user[index_gui] = 1                    # jog the device
 
                 elif q == 2:
-                    winPoll1.attroff(WHITE_AND_GREEN)
+                    winPoll1.attroff(BLACK_AND_GREEN)
                     winPoll1.attron(BLACK_AND_WHITE)
                     winPoll1.addstr(1, 38, "| RUN |")
                     poll_user[index_gui] = 2                    # run the device
@@ -554,7 +606,7 @@ def curs(stdscr):
         curses.noecho()
         winPoll4.nodelay(True)
         winPoll4.clear()
-        winPoll4.attron(WHITE_AND_GREEN)
+        winPoll4.attron(curses.color_pair(random.randint(1,6)))
         winPoll4.addstr(0, 18, "| CONFIRM? |")
         winPoll4.refresh()
             
@@ -608,7 +660,7 @@ def curs(stdscr):
                 winData1.refresh()
 
                 winData1.attroff(WHITE_AND_MAGENTA)     
-                winData1.attron(WHITE_AND_GREEN)
+                winData1.attron(BLACK_AND_GREEN)
 
                             # collect data
                 curses.noecho()
@@ -629,11 +681,11 @@ def curs(stdscr):
                         if q < 2:
                             q += 1
 
-                    winData1.attroff(WHITE_AND_GREEN)     
+                    winData1.attroff(BLACK_AND_GREEN)     
                     winData1.attron(WHITE_AND_MAGENTA)
                     winData1.addstr(2, 0, "Direction ?        | FWD | REV | REDO | ? ")
                     winData1.attroff(WHITE_AND_MAGENTA)     
-                    winData1.attron(WHITE_AND_GREEN)
+                    winData1.attron(BLACK_AND_GREEN)
 
                     if q == 0:
                         winData1.addstr(2, 19, "| FWD |")
@@ -707,7 +759,7 @@ def curs(stdscr):
                 winData1.refresh()
 
                 winData1.attroff(WHITE_AND_MAGENTA)     
-                winData1.attron(WHITE_AND_GREEN)
+                winData1.attron(BLACK_AND_GREEN)
 
                             # collect data
                 curses.noecho()
@@ -728,11 +780,11 @@ def curs(stdscr):
                         if q < 2:
                             q += 1
 
-                    winData1.attroff(WHITE_AND_GREEN)     
+                    winData1.attroff(BLACK_AND_GREEN)     
                     winData1.attron(WHITE_AND_MAGENTA)
                     winData1.addstr(4, 0, "Direction ?        | FWD | REV | REDO | ? ")
                     winData1.attroff(WHITE_AND_MAGENTA)     
-                    winData1.attron(WHITE_AND_GREEN)
+                    winData1.attron(BLACK_AND_GREEN)
 
                     if q == 0:
                         winData1.addstr(4, 19, "| FWD |")
@@ -782,7 +834,7 @@ def curs(stdscr):
                 winRun1.addstr(4, 18, "| ESTOP |")
                 winRun1.refresh()
                
-            sleep(0.5)
+            sleep(10)
 
 
     # Simple ESTOP button
@@ -817,7 +869,21 @@ def curs(stdscr):
 
 
     elif reqGUI == ERROR:
-        pass
+        #avoiding a global index here people...forgive me coding gods
+        index_gui = int((column-5)/7)
+
+        # display window
+        winPoll4 = curses.newwin(5, 60, column, 30)
+        curses.noecho()
+        winPoll4.nodelay(True)
+        winPoll4.clear()
+        winPoll4.attron(RED_AND_WHITE)
+        winPoll4.addstr(4, 10, Error_2Str(user_code))
+        winPoll4.refresh()
+            
+
+        sleep(5)
+        
 
     else:
         print("Requested GUI Error")
