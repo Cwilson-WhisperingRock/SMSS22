@@ -1323,19 +1323,19 @@ void recvEvent(int numBytes){
     else if (state == RUN_S && time_flag == true){
          
         if(dur_mark == 0){
-          hour_user = time_stamp_end / 3600000;
+          hour_user = int(time_stamp_end / 3600000);
           Wire.write(hour_user);
           dur_mark++;
           }
           
         else if(dur_mark == 1){
-          min_user = (time_stamp_end - (3600*hour_user)) / 60;
+          min_user = int((time_stamp_end - (3600*hour_user)) / 60);
           Wire.write(min_user);
           dur_mark++;
           }
 
         else if(dur_mark == 2){
-          sec_user = time_stamp_end - (3600 * hour_user) - (60 * min_user);
+          sec_user = int(time_stamp_end - (3600 * hour_user) - (60 * min_user));
           Wire.write(sec_user);
           dur_mark = 0;
           time_flag = false;
