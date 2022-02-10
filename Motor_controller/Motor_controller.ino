@@ -8,11 +8,11 @@
 
 
 // Test Variables
-#define TESTING               // Comment to cancel testing
+//#define TESTING               // Comment to cancel testing
 //#define SERIAL_COMMS          // Comment to cancel serial comms [manual testing]
 #define I2C_COMMS               // Comment to cancel I2C comms
-//#define ard_nano_uno            // Using nano/uno board 
-#define ard_micro               // Using micro board
+#define ard_nano_uno            // Using nano/uno board 
+//#define ard_micro               // Using micro board
 
 
 // State machine 
@@ -121,7 +121,7 @@ unsigned long time_stamp_end = 0;           // "
   #define ARD_ADD_1 0x14                      // Arduino #1
   #define ARD_ADD_2 0x28                      // Arduino #2
   #define ARD_ADD_3 0x42                      // Arduino #3
-  int i2c_address = ARD_ADD_3;
+  int i2c_address = ARD_ADD_1;
 
   // I2C Variables
   int poll_user = 0;                       // run state of the ard [OFF(0), JOG(1), START(2) ]
@@ -522,7 +522,7 @@ void validDur_Start(float Q,float Vol, float Time){
             
             }
   
-          duration = ( (3600 * hour_user) + (60 * min_user) + sec_user) / 1000;   // entire duration in msec for easy compare later
+          duration = ( (3600 * hour_user) + (60 * min_user) + sec_user);   // entire duration in msec for easy compare later
           
           freq =  Q_to_Freq(q_user, syr_radius_user);                             // Get period from Q
           freq = MicroCali(freq);                                                 // Calibrate for microstepping + TICKET
@@ -671,8 +671,8 @@ void validDur_Start(float Q,float Vol, float Time){
           else{
   
             time_stamp_end = millis();
-            time_stamp_end = time_stamp_end - time_stamp_start;       // total elapsed time
-            if( time_stamp_end >= duration){ FINISH = true;}          // if time had reached user's request
+            time_stamp_end = (time_stamp_end - time_stamp_start);       // total elapsed time
+            if( time_stamp_end/1000 >= duration){ FINISH = true;}          // if time had reached user's request
             state = RUN_S;
           }
           
@@ -790,8 +790,10 @@ void validDur_Start(float Q,float Vol, float Time){
     case STANDBY:
         
         digitalWrite(YELLOW, HIGH);                                // LED indicator
+
+        if(estop_user == true){state = STOP;}
       
-        if (poll_user == 2){                                       // User selects START for normal use
+        else if (poll_user == 2){                                       // User selects START for normal use
           digitalWrite(YELLOW, LOW);                             // LED indicator
           state = DATAPULL_S;
           }  
@@ -809,32 +811,38 @@ void validDur_Start(float Q,float Vol, float Time){
 
         digitalWrite(BLUE, HIGH);                                                 // LED indicator
 
-        if(redo_flag == true){state = STOP;}
+        if(redo_flag == true || estop_user == true){state = STOP;}
 
         // if all data has been pulled from Pi, process and find errors (if exist)
         else if(dp_checkpoint == false && datapull_flag == true){                                                
 
           
           // Process variables for valid TICKET and check for errors
-          duration = ( (3600 * hour_user) + (60 * min_user) + sec_user) / 1000;   // entire duration in msec for easy compare later
+          duration =  (3600 * hour_user) + (60 * min_user) + sec_user;   // entire duration in msec for easy compare later
 
           #ifdef TESTING
-              Serial.print("Duration");
+              Serial.print("hour_user : ");
+              Serial.println(3600 * hour_user);
+              Serial.print("min_user : ");
+              Serial.println(60 * min_user);
+              Serial.print("sec_user : ");
+              Serial.println(sec_user);
+              Serial.print("Duration : ");
               Serial.println(duration, 10);
           #endif
           
           freq =  Q_to_Freq(q_user, syr_radius_user);                             // Get period from Q
 
           #ifdef TESTING
-              Serial.print("Freq");
-              Serial.println(freq, 10);
+              Serial.print("Freq : ");
+              Serial.println(freq);
           #endif
           
           freq = MicroCali(freq);                                                 // Calibrate for microstepping + error check (TICKET)
 
           #ifdef TESTING
-              Serial.print("Freq");
-              Serial.println(freq, 10);
+              Serial.print("Freq: ");
+              Serial.println(freq);
           #endif
           
           if(duration == 0){TICKET = false;}
@@ -873,7 +881,7 @@ void validDur_Start(float Q,float Vol, float Time){
         digitalWrite(BLUE, HIGH);                                               // LED indicator
         digitalWrite(WHITE, HIGH);                                              // LED indicator
 
-        if(redo_flag == true){state = STOP;}
+        if(redo_flag == true || estop_user == true){state = STOP;}
         
         // if all data has been pulled from Pi, process and find errors (if exist)
         else if(dp_checkpoint == false && datapull_flag == true){
@@ -942,9 +950,17 @@ void validDur_Start(float Q,float Vol, float Time){
       digitalWrite(GREEN, HIGH);                                               // LED indicator
 
       
-      if(estop_user == ESTOP || FINISH == true){
+      if(estop_user == true){
           digitalWrite(GREEN, LOW);                                               // LED indicator
           state = STOP;
+          Timer1.disablePwm(STEP);
+      }
+
+      // keep ard here until finish is sent
+      else if(FINISH == true){
+        digitalWrite(GREEN, LOW);                                               // LED indicator
+        Timer1.disablePwm(STEP);
+        state = RUN_S;
       }
   
       // init run of motor
@@ -962,8 +978,8 @@ void validDur_Start(float Q,float Vol, float Time){
       else{
   
         time_stamp_end = millis();
-        time_stamp_end = time_stamp_end - time_stamp_start;       // total elapsed time
-        if( time_stamp_end >= duration){ FINISH = true;}          // if time had reached user's request
+        time_stamp_end = (time_stamp_end - time_stamp_start);       // total elapsed time
+        if( time_stamp_end/1000 >= duration){ FINISH = true;}          // if time had reached user's request
         state = RUN_S;
       }
       
@@ -1287,7 +1303,7 @@ void recvEvent(int numBytes){
               break;
 
           case ESTOP_DATA:
-            estop_user = temp;
+            estop_user = true;
             break;
 
           default:
@@ -1308,7 +1324,10 @@ void recvEvent(int numBytes){
 
     
     // Tell Pi RUN_S has finished 
-    if(FINISH == true){Wire.write(FINISH_CODE);}       
+    if(FINISH == true && time_flag == false){
+      Wire.write(FINISH_CODE);
+      estop_user = true;       
+    }
 
 
     // If in RUN_S but enough time hasn't elapsed, send time_code for next TX
@@ -1321,24 +1340,51 @@ void recvEvent(int numBytes){
 
     // Once Pi has recv time_code, send the time metrics
     else if (state == RUN_S && time_flag == true){
+
+        // convert time_end to sec from ms
+        unsigned long time_end = time_stamp_end / 1000;
+
+        #ifdef TESTING
+            Serial.print("time_end : ");
+            Serial.println(time_end);
+        #endif
          
         if(dur_mark == 0){
-          hour_user = int(time_stamp_end / 3600000);
+          hour_user = int(time_end / 3600);
           Wire.write(hour_user);
           dur_mark++;
+
+          #ifdef TESTING
+            Serial.print("hour_user : ");
+            Serial.println(hour_user);
+          #endif
+          
           }
           
         else if(dur_mark == 1){
-          min_user = int((time_stamp_end - (3600*hour_user)) / 60);
+          min_user = int(( time_end - (3600*hour_user)) / 60);
           Wire.write(min_user);
           dur_mark++;
+
+          #ifdef TESTING
+            Serial.print("min_user : ");
+            Serial.println(min_user);
+          #endif
+          
           }
 
         else if(dur_mark == 2){
-          sec_user = int(time_stamp_end - (3600 * hour_user) - (60 * min_user));
+          sec_user = int( time_end - (3600 * hour_user) - (60 * min_user));
           Wire.write(sec_user);
           dur_mark = 0;
           time_flag = false;
+
+
+          #ifdef TESTING
+            Serial.print("sec_user : ");
+            Serial.println(sec_user);
+          #endif
+          
           }
     }
 
