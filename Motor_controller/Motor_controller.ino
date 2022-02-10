@@ -11,8 +11,8 @@
 #define TESTING               // Comment to cancel testing
 //#define SERIAL_COMMS          // Comment to cancel serial comms [manual testing]
 #define I2C_COMMS               // Comment to cancel I2C comms
-#define ard_nano_uno            // Using nano/uno board 
-//#define ard_micro               // Using micro board
+//#define ard_nano_uno            // Using nano/uno board 
+#define ard_micro               // Using micro board
 
 
 // State machine 
@@ -91,12 +91,12 @@ char step_config = S_FULL;                  // Set default to full step
 #define INTERNAL_STEP 200                   // Internal step size of the motor
 #define GEAR_RATIO  99.05                   // gear ratio of the planetary gear
 #define THREAD_PITCH  0.005                 // thread pitch of the actuator's screw [m]
-unsigned int syr_capacity = 30;             // capacity of syringe in mL
-float syr_radius_user = 0.010845;           // RADIUS of the 30ml BD syringe [m]
+float syr_capacity = 30;             // capacity of syringe in mL
+float syr_radius_user = 11;           // RADIUS of the 30ml BD syringe [m]
 float q_user = 0;                           // volumetric flow rate as requested by user [L/s]
 float freq = 200;                           // [sec/step]
-unsigned int sec_user = 0;                  // User requested sec duration
-unsigned int min_user = 0;                  // User requested min duration
+unsigned long sec_user = 0;                  // User requested sec duration
+unsigned long min_user = 0;                  // User requested min duration
 unsigned long hour_user = 0;                // User "         hour "
 unsigned long duration = 0;                 // Run time {msec}
 unsigned long time_stamp_start = 0;         // time keeping 
@@ -121,14 +121,15 @@ unsigned long time_stamp_end = 0;           // "
   #define ARD_ADD_1 0x14                      // Arduino #1
   #define ARD_ADD_2 0x28                      // Arduino #2
   #define ARD_ADD_3 0x42                      // Arduino #3
+  int i2c_address = ARD_ADD_3;
 
   // I2C Variables
-  char poll_user = 0;                       // run state of the ard [OFF(0), JOG(1), START(2) ]
-  char recData = 0;                         // storage for dictation codes
-  char strRX[200];                          // RX storage
+  int poll_user = 0;                       // run state of the ard [OFF(0), JOG(1), START(2) ]
+  int recData = 0;                         // storage for dictation codes
+  char strRX[2000];                          // RX storage
   char dur_mark = 0;                        // marker to aid recv/req track incoming hour, min, sec 
   bool datapull_flag = false;               // completed datapull from I2C
-  char motor_dir = 0;                       // [ (0) - REV, (1) - FWD, (2) - *BACK to STANDBY] *some cases(change l8r)
+  int motor_dir = 0;                       // [ (0) - REV, (1) - FWD, (2) - *BACK to STANDBY] *some cases(change l8r)
 
   // Pi's Dictating (main) codes 
   #define POLLDATA 1                        // Ard will recv[OFF, JOG, START] 
@@ -140,6 +141,7 @@ unsigned long time_stamp_end = 0;           // "
   #define EVENT_DATA 7                      // Ard will proceed to RUN
   #define ESTOP_DATA 8                      // Ard will proceed to STOP
   #define REDO_DATA 9                       // Ard will reset to STANDBY from DATAPULL
+  #define BLOCK_DATA 10
 
   // Arduino's Requested (Sub) codes                       
   #define LARGE_ERR 0x3                     // User req too large (Q) for hardware constraints
@@ -154,9 +156,10 @@ unsigned long time_stamp_end = 0;           // "
   #define WAIT_CODE 0x15                    // Ard needs time to pull data and validate 
   #define FINISH_CODE 0x16                  // Ard's duration has been reached and finished RUN_S
   #define TIME_CODE 0x17                    // Ard is not done with RUN_S and will return time(h,m,s) if prompted
-  #define REDO_CODE 0x18
   bool redo_flag = false;
   bool time_flag = false;                   // bool to help with req time code [ true - sent TIME_CODE already]
+  char block_recv = 0;
+  unsigned long block[6] = {0,0,0,0,0,0};       // [BLOCK_DATA, dict_code, fac1, rem1, fac2, rem2] for data RX (I2c only transmitts 256 bit)
 
 
   // Arduino checkpoints
@@ -182,7 +185,7 @@ void setup() {
     Serial.begin(9600);
     #endif
   
-  Wire.begin(ARD_ADD_1);                        // I2C bus logon with sub address
+  Wire.begin(i2c_address);                        // I2C bus logon with sub address
   Wire.onReceive(recvEvent);                    // run recvEvent on a main write to read <-
   Wire.onRequest(reqEvent);                     // run reqEvent on a main read to write ->
   #endif
@@ -366,17 +369,30 @@ double MicroCali( float frequency ){
   
 /* ~~~~~~~~~~~~~~~~~~~~~~~~ validDur_Start() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  *  Purpose : Confirm volumetric flow rate x duration wont exceed the syringe capacity 
- *  Input : [global]   q_user, syr_capacity, duration
+ *  Input : [global]   q_user[L/s], syr_capacity[m], duration[s]
  *  Output : [global] bool TICKET
  */
-void validDur_Start(float Q,float Vol, unsigned int Time){
-  if ( (Q * Time) <= Vol ){ TICKET = true;}
+void validDur_Start(float Q,float Vol, float Time){
+  if ( (Q * Time) <= Vol ){ 
+
+    #ifdef TESTING
+      Serial.println(" Valid dur");
+    #endif
+    
+    TICKET = true;}
   else {
 
     #ifdef I2C_COMMS
     if(error_code == NO_ERR){error_code = DUR_ERR;}
     else if(error_code == LARGE_ERR){error_code = LD_ERR;}
     else if(error_code == SMALL_ERR){error_code = SD_ERR;}
+    #endif
+
+    #ifdef TESTING
+      Serial.println("Bad Dur");
+      Serial.println(Q, 10);
+      Serial.println(Vol, 10);
+      Serial.println(Time, 15);
     #endif
     
     TICKET = false;}
@@ -439,7 +455,7 @@ void validDur_Start(float Q,float Vol, unsigned int Time){
           Serial.println(" ~~~~~~~~~~DATAPULL_S~~~~~~~~~ ");
           Serial.println(" What is the fluid capacity of the syringe[mL]? (newline)");
           while(newData_str == false){recvWithEndMarker();}                                                     
-          syr_capacity = userString2Float();
+          syr_capacity = userString2Float() / 1000;
           
           Serial.println(" What is the radius of the syringe plunger[um]? (newline)");
           while(newData_str == false){recvWithEndMarker();}
@@ -506,13 +522,13 @@ void validDur_Start(float Q,float Vol, unsigned int Time){
             
             }
   
-          duration = ( (3600 * hour_user) + (60 * min_user) + sec_user) * 1000;   // entire duration in msec for easy compare later
+          duration = ( (3600 * hour_user) + (60 * min_user) + sec_user) / 1000;   // entire duration in msec for easy compare later
           
           freq =  Q_to_Freq(q_user, syr_radius_user);                             // Get period from Q
           freq = MicroCali(freq);                                                 // Calibrate for microstepping + TICKET
         
           if(duration == 0){TICKET = false;}
-          else if(TICKET == true){validDur_Start(q_user, syr_capacity, duration);}     // final TICKET confirm duration 
+          else if(TICKET == true){validDur_Start(q_user, syr_capacity , duration);}     // final TICKET confirm duration 
           
           if(receivedChar == BACK){
             digitalWrite(BLUE, LOW);                                              // LED indicator
@@ -798,10 +814,29 @@ void validDur_Start(float Q,float Vol, unsigned int Time){
         // if all data has been pulled from Pi, process and find errors (if exist)
         else if(dp_checkpoint == false && datapull_flag == true){                                                
 
+          
           // Process variables for valid TICKET and check for errors
-          duration = ( (3600 * hour_user) + (60 * min_user) + sec_user) * 1000;   // entire duration in msec for easy compare later
+          duration = ( (3600 * hour_user) + (60 * min_user) + sec_user) / 1000;   // entire duration in msec for easy compare later
+
+          #ifdef TESTING
+              Serial.print("Duration");
+              Serial.println(duration, 10);
+          #endif
+          
           freq =  Q_to_Freq(q_user, syr_radius_user);                             // Get period from Q
+
+          #ifdef TESTING
+              Serial.print("Freq");
+              Serial.println(freq, 10);
+          #endif
+          
           freq = MicroCali(freq);                                                 // Calibrate for microstepping + error check (TICKET)
+
+          #ifdef TESTING
+              Serial.print("Freq");
+              Serial.println(freq, 10);
+          #endif
+          
           if(duration == 0){TICKET = false;}
           else if(TICKET == true){validDur_Start(q_user, syr_capacity, duration);}     // final TICKET confirm duration + error
         
@@ -985,7 +1020,7 @@ void validDur_Start(float Q,float Vol, unsigned int Time){
    *  Purpose : Read the incoming data from main's request
    *  Input : I2C Rx codes from Pi
    *  Output : [global] user variable write
-   */
+   
   void recvEvent(int numBytes_TX){
 
     // Read the dictating code first
@@ -1088,8 +1123,181 @@ void validDur_Start(float Q,float Vol, unsigned int Time){
     }
 
   }
+  */
+
+
+void recvEvent(int numBytes){
+
+    unsigned long temp;
   
+    recData = Wire.read();
+
+    //First recv is BLOCK_DATA unless rollcall (0)
+    if(block_recv == 0){
+
+      //Ignore data is not a block (its rollcall or i2cdetect instead)
+      if(recData == BLOCK_DATA){
+        //block[0] = recData;
+        block_recv++;
+      }
+      
+      
+    }
+
+    else if (block_recv == 1){
+      block[1] = recData;
+      block_recv++;
+
+       #ifdef TESTING
+        Serial.print("block[1] : ");
+        Serial.println(block[1]); 
+      #endif
+      }
+      
+    else if (block_recv == 2){
+      block[2] = recData;
+      block_recv++;
+
+       #ifdef TESTING
+        Serial.print("block[2] : ");
+        Serial.println(block[2]); 
+      #endif
+      
+      }
+      
+    else if (block_recv == 3){
+      block[3] = recData;
+      block_recv++;
+      
+       #ifdef TESTING
+        Serial.print("block[3] : ");
+        Serial.println(block[3]); 
+      #endif
+      }
+      
+    else if (block_recv == 4){
+      block[4] = recData;
+      block_recv++;
+
+       #ifdef TESTING
+        Serial.print("block[4] : ");
+        Serial.println(block[4]); 
+      #endif
+      }
+
+    else if (block_recv == 5){
+      block[5] = recData;
+      block_recv++;
+
+       #ifdef TESTING
+        Serial.print("block[5] : ");
+        Serial.println(block[5]); 
+      #endif
+      
+      }
+
+
+    // If entire block has been recv, process data
+    if (block_recv == 6){
+
+        //if second factor is non-zero, data uses fac2, rem2
+        if(block[4] != 0){
+          temp = 256 * (256 * block[4] + block[5]) + block[3];
+          }
   
+        // Only one factor of 256
+        else if (block[2] != 0){
+          temp = 256 * block[2]  + block[3];
+          }
+
+        else{temp = block[3];}
+
+        #ifdef TESTING
+          Serial.print("temp : ");
+          Serial.println(temp); 
+        #endif  
+
+        //reset index
+        block_recv = 0;
+
+
+        // Read Dict Codes to store in right variable
+        switch(block[1]){
+
+          case POLLDATA:
+              poll_user = temp;                                 
+              break;
+
+          case Q_DATA:
+              q_user = temp;
+              q_user /=1000000000; 
+              break;
+  
+          case R_DATA:
+              syr_radius_user = temp;
+              syr_radius_user /= 1000;             
+              break;
+  
+          case CAP_DATA:
+              syr_capacity = temp;  
+              syr_capacity /= 1000;           
+              break;
+  
+          case DUR_DATA:
+              if(dur_mark == 0){
+                hour_user = temp;
+                dur_mark++;
+                }
+              else if (dur_mark == 1){
+                min_user = temp;
+                dur_mark++;
+                }
+              else if (dur_mark == 2){
+                sec_user = temp;           
+                dur_mark = 0;
+              }
+  
+              break;
+  
+          case DIR_DATA: 
+              motor_dir = temp;            
+              datapull_flag = true;                             
+  
+              #ifdef TESTING
+                Serial.println(poll_user);
+                Serial.println(q_user,10);
+                Serial.println(syr_radius_user,8);
+                Serial.println(syr_capacity);
+                Serial.println(hour_user);
+                Serial.println(min_user);
+                Serial.println(sec_user);
+                Serial.println(motor_dir);
+              #endif
+              
+              break;
+
+          case EVENT_DATA:
+              eventstart = true;                                  
+              break;
+
+          case REDO_DATA:
+              redo_flag = temp; 
+              Serial.println("STOPPED");
+              state = STOP;            
+              break;
+
+          case ESTOP_DATA:
+            estop_user = temp;
+            break;
+
+          default:
+            error_code = DICT_ERR;
+            break;
+      }
+    }    
+      
+    }
+    
   
   /* ~~~~~~~~~~~~~~~~~~~~~~~~ reqEvent() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
    *  Purpose : Write data to main at its request
@@ -1149,11 +1357,16 @@ void validDur_Start(float Q,float Vol, unsigned int Time){
         dp_checkpoint = false;
         datapull_flag = false;  
       }
-      Wire.write(error_code);}                              // TX error
+      Wire.write(error_code);
+                                         // TX error
       #ifdef TESTING
         Serial.print("Error code :");
         Serial.println(error_code, HEX);
       #endif
+
+      error_code = NO_ERR;
+
+    }
   }
 
 
