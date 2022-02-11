@@ -4,13 +4,11 @@
 
 
 from time import sleep                   # python delay
-from smbus2 import SMBus, i2c_msg
+from smbus2 import SMBus
 from transitions import Machine          # state machine
-
 import curses                            # GUI
 from curses import wrapper
-from curses.textpad import Textbox, rectangle
-
+from curses.textpad import Textbox
 import random
 
 
@@ -31,9 +29,7 @@ class HubMachine(object):
 
 
 # States for GUI
-global FRAME, POLL, DATA, RUN, ERROR, USER_CONFIRM, USER_ESTOP
-global reqGUI
-reqGUI = 0x0
+global FRAME, POLL, DATA, RUN, ERROR, USER_CONFIRM, USER_ESTOP, reqGUI
 FRAME = 0x0
 POLL = 0x1
 DATA = 0x2
@@ -41,13 +37,11 @@ ERROR = 0x3
 RUN = 0x4
 USER_CONFIRM = 0x6
 USER_ESTOP = 0x7
+reqGUI = 0x0          # Working var for GUI states
 
+# Index for device spacing in the GUI
 global column
 column = 0
-
-global BLOCK_DATA
-BLOCK_DATA = 10
-
 
 # Data between user-curses-arduino
 global rollcall, poll_user, q_user, radius_user, cap_user
@@ -87,9 +81,10 @@ user_code = 0                       # working variable
     
 def main():
 
+    # Working Variables that pass through main and GUI
     global rollcall, poll_user, q_user, radius_user, cap_user
     global hour_user, min_user, sec_user, dir_user, back_flag
-    global estop_flag, ard_duration
+    global estop_flag, ard_duration, reqGUI
     
     # I2C Addresses
     PI_ADD = 0x01                       
@@ -107,27 +102,21 @@ def main():
     DIR_DATA = 6                        # Ard will recv[DIRECTION]
     EVENT_DATA = 7                      # Ard will proceed RUN
     ESTOP_DATA = 8                      # Ard will proceed to STOP
-    REDO_DATA = 9                       # ARd will revert back to STANDBY from DATAPULL
-    global BLOCK_DATA
-    BLOCK_DATA = 10
+    REDO_DATA = 9                       # Ard will revert back to STANDBY from DATAPULL
+    BLOCK_DATA = 10                     # Ard will recv a block (4) of data
     
 
     # Arduino's Requested (Sub) codes
-    user_code = 0                       # working variable
-    #user_code = NO_ERR
-
+    user_code = 0                       # working var for reading ERR/CODE from Ard
 
     #availability of arduino deivces 0 = false, 1 = true
     rollcall = [0,0,0]
-    #rollcall = [1,1,1]
 
     # GUI Window constants
     global column
     COL_CONST = 7
     COL_OFFSET = 5
 
-    # GUI command codes
-    global reqGUI
 
     #curses window
     stdscr = curses.initscr()
@@ -135,15 +124,17 @@ def main():
     #state machine init
     Hub = HubMachine("SMSS")
 
+    # Loop states
     while True:
 
+        # Inital device check and device run-state selection
         if Hub.state == 'START' :
 
             #Identify devices on the buffer
             rollcall = deviceRollcall(address)
 
             #Display GUI background frame
-            global reqGUI
+            #global reqGUI
             reqGUI = FRAME
             curs(stdscr)
             
@@ -153,60 +144,64 @@ def main():
                     transmit_block(address[i], ESTOP_DATA, True )
 
 
-            # Write dictation code + poll_user
+            # Gather device run-state in GUI and TX to Ard
             for i in range(3):
 
-                # Poll user for device run modes
+                # GUI set to poll user for run-state
                 reqGUI = POLL
 
-
+                #if device is active
                 if rollcall[i] > 0:
-                    global column
+
+                    #set the correct column spacing
+                    #global column
                     column = COL_CONST * i + COL_OFFSET
                     
+                    # Go to GUI
                     curs(stdscr)
-                    #print(f"Poll_user{i} = {poll_user[i]}")
                     transmit_block(address[i], POLLDATA, poll_user[i] )
                     
                 else:
-                    print("Dont got'em")
+                    #print("Dont got'em")
+                    pass
                     
             
-            #loop if all devices are off
+            # loop if all devices are off
             if (poll_user[0] == 0 and poll_user[1] == 0 and poll_user[2] == 0) :
                 pass
 
-            # Change states to DATAPULL
+            # Change GUI windows to DATAPULL 
             else:
                 reqGUI = USER_CONFIRM
                 curs(stdscr)
                 Hub.CONFIRM()
 
-
+        # Pull data from user using the Hub GUI
         elif Hub.state == 'DATAPULL' :
             
+            #for all three devices
             for i in range(3):
 
                 # if device is active
                 if poll_user[i] > 0:
 
-                    loop = True                 # loop to weed out user error
-                    data_preserve = False       # flag to redo user data
+                    loop = True                         # loop to weed out user error
+                    data_preserve = False               # flag to redo user data
                     
-                    #print curse window + datapull
+                    # update window column on GUI
                     column = COL_CONST * i + COL_OFFSET
-
 
                     # loop until all errors are out
                     while loop == True:
 
+                        # Present data collection GUI
                         reqGUI = DATA
                         curs(stdscr)
                         
-                        # if user selected to go back
+                        # if user selected to go back to poll GUI instead
                         if back_flag[i] == True:
                             
-                             #reset flag
+                            #reset flag
                             back_flag[i] = False
 
                             # transmit redo flag
@@ -220,15 +215,15 @@ def main():
                             curs(stdscr)
 
                             #loop to transmit again
-                            data_preserve = False    # TX data to ard again
-                            loop = True              #error code loop still valid
+                            data_preserve = False           # TX new data to ard again
+                            loop = True                     # continue to monitor for user error
 
-                            #if user turns off device in redo
+                            #if user turns off device in redo, set device to standby
                             if poll_user[i] == 0:
-                                 data_preserve = True
+                                 data_preserve = True       # dont write unwanted data
                         
 
-                        # Send existing data or trash data
+                        # Send data batch (False) or keep data (True)
                         if data_preserve == False:
 
                             # if device is in JOG
@@ -237,9 +232,8 @@ def main():
                                 transmit_block(address[i], Q_DATA, int(q_user[i]))
                                 transmit_block(address[i], R_DATA, int(radius_user[i]) )
                                 transmit_block(address[i], DIR_DATA, int(dir_user[i]) )
-                                #pass
-                        
-                                       
+                                
+                                                         
                             # if device is in RUN
                             elif poll_user[i] == 2:
                                 transmit_block(address[i], Q_DATA, int(q_user[i]) )
@@ -250,18 +244,7 @@ def main():
                                 transmit_block(address[i], DUR_DATA, int(sec_user[i]) )
                                 transmit_block(address[i], DIR_DATA, int(dir_user[i]) )
 
-                                #print(int(q_user[i]))
-                                #print(int(radius_user[i]))
-                                #print(int(cap_user[i]))
-                                #print(int(hour_user[i]))
-                                #print(int(min_user[i]))
-                                #print(int(sec_user[i]))
-                                #print(int(dir_user[i]))
-                                #sleep(5)
-
-                                #pass
-
-                        #if user turns off device in redo
+                        #if user turns off device in redo, dont loop for error removal
                         if poll_user[i] == 0:
                             loop = False
 
@@ -269,25 +252,23 @@ def main():
                             # read bus for error codes
                             with SMBus(1) as bus: 
                                 user_code = bus.read_byte(address[i], 0)
-
-                           
+      
                             # pass if no errors are present (exit condition)
                             if user_code == NO_ERR:
-                                data_preserve = False
-                                loop = False
+                                data_preserve = False       # reset var
+                                loop = False                # dont loop for errors (none exist ..hopefully)
                                     
-
                             # loop if told to wait (and check again for errors)
                             elif user_code == WAIT_CODE:
-                                data_preserve = True
-                                loop = True
+                                data_preserve = True        # dont trash data yet
+                                loop = True                 # loop to check for error though
 
                             # proceed to error screen and loop this again
                             else:
-                                reqGUI = ERROR
+                                reqGUI = ERROR              # go to GUI screen to show error
                                 curs(stdscr)
-                                data_preserve = False
-                                loop = True
+                                data_preserve = False       # transmit a new batch of data
+                                loop = True                 # loop to prompt user for better data
                         
                                 
                         
@@ -302,7 +283,7 @@ def main():
                     transmit_block(address[i], EVENT_DATA, True )
             Hub.EVENTSTART()
 
-
+        # Run motors, present estops, and monitor devices
         elif Hub.state == 'RUN' :
 
 
@@ -371,15 +352,20 @@ def main():
             hour_user = [0,0,0]
             min_user = [0,0,0]
             sec_user = [0,0,0]
-            dir_user = [0,0,0]                                              # 0 - REV, 1 - FWD 
-            back_flag = [False, False, False]                               # User sel to go back
-            estop_flag = [False, False, False]                              # User sel for device estop
-            ard_duration = [[0,0,0], [0,0,0], [0,0,0]]                      # run time from ard
+            dir_user = [0,0,0]                                               
+            back_flag = [False, False, False]                               
+            estop_flag = [False, False, False]                              
+            ard_duration = [[0,0,0], [0,0,0], [0,0,0]]                      
             user_code = 0
 
             Hub.RESET()
 
 
+# Error_2Str()
+# SIGNATURE : int -> String
+# PURPOSE : Takes in Error code and returns a string 
+#           that aids the user in correcting their data 
+#           requests
 def Error_2Str(error):
     
     if error == LARGE_ERR:
@@ -395,56 +381,34 @@ def Error_2Str(error):
     elif error == DICT_ERR:
         return "Error : Ard got lost...GULP"
 
-'''
-'''    
+    
 
-# transmit__block()
+# transmit_block()
 # SIGNATURE : int, int, int -> 
 # PURPOSE : Transmits a dictating code +  data to an address
 #           
 def transmit_block(addr, dict_code, int_data):
 
+    # Code for ard to prep for a block 
+    BLOCK_DATA = 10 
+
+    #       [block, dict_code, factor1, remainder1, factor2, remainder2]
     block = [BLOCK_DATA, dict_code, 0, int_data, 0, 0]
     
-    i = 2
+    #(can only handle 256 ^3)...increase for larger data set
+    i = 2  
+
     while int_data > 255:
-        block[i] = int(min(int_data / 256, 256))
-        block[i+1] = int(int_data % 256)
-        int_data /= 256
-        i += 2
-
-    
-
+        block[i] = int(min(int_data / 256, 256))    # store factor of 256
+        block[i+1] = int(int_data % 256)            # store remainder of 256
+        int_data /= 256                             # break down data
+        i += 2                                      
         
+    #transmit data
     with SMBus(1) as bus:
         for i in range(6):
             bus.write_byte(addr, block[i])
             sleep(0.15)
-
-            
-
-
-# recv_block()
-# SIGNATURE : int -> int
-# PURPOSE : Reads data from address
-def recv_block(addr):
-
-    with SMBus(1) as bus: 
-
-        # device one is requested active -> write
-        if bool_array[0] > 0 :
-            stor[0] = bus.read_byte(ARD_ADD_1, 0)
-
-        # device two is requested active -> write
-        if bool_array[1] > 0 :
-            stor[1] = bus.read_byte(ARD_ADD_2, 0)
-
-        # device three is requested active -> write
-        if bool_array[2] > 0 :
-            stor[2] = bus.read_byte(ARD_ADD_3, 0)
-
-        return stor
-    
 
 
 # deviceRollcall()
@@ -473,9 +437,8 @@ def deviceRollcall(myaddress):
     sleep(0.1)    
     return dev_status
 
-'''
-'''
 
+# GUI 
 def curs(stdscr):
 
     global FRAME, POLL, DATA, RUN, ERROR, USER_CONFIRM, USER_ESTOP
@@ -483,6 +446,7 @@ def curs(stdscr):
     global rollcall, poll_user, q_user, radius_user, cap_user
     global hour_user, min_user, sec_user, dir_user
     
+
     # Color combinations (ID, foreground, background)
     curses.init_pair(1, curses.COLOR_RED, curses.COLOR_WHITE)
     RED_AND_WHITE = curses.color_pair(1)
@@ -503,10 +467,10 @@ def curs(stdscr):
     BLACK_AND_RED = curses.color_pair(6)
 
 
-    
 
     # Display background frame
     if reqGUI == FRAME:
+
         stdscr.clear()
         stdscr.attron(YELLOW_AND_CYAN)
         stdscr.resize(28,100)
@@ -636,10 +600,10 @@ def curs(stdscr):
 
         # display window
         winPoll4 = curses.newwin(1, 46, 25, 35)
-        curses.noecho()
-        winPoll4.nodelay(True)
+        curses.noecho()                                 # dont repeat user input
+        winPoll4.nodelay(True)                          # dont wait user input
         winPoll4.clear()
-        winPoll4.attron(curses.color_pair(random.randint(1,6)))
+        winPoll4.attron(curses.color_pair(random.randint(1,6))) #randomly change color
         winPoll4.addstr(0, 18, "| CONFIRM? |")
         winPoll4.refresh()
             
@@ -667,6 +631,7 @@ def curs(stdscr):
 
             # User selected JOG function
             elif poll_user[index_gui] == 1:
+
                 winData1 = curses.newwin(5, 60, column, 30)
                 winData1.attron(WHITE_AND_MAGENTA)
 
@@ -907,7 +872,7 @@ def curs(stdscr):
             winPoll4.refresh()
             
 
-
+    # Presents error string in device window
     elif reqGUI == ERROR:
         #avoiding a global index here people...forgive me coding gods
         index_gui = int((column-5)/7)
@@ -918,11 +883,11 @@ def curs(stdscr):
         winPoll4.nodelay(True)
         winPoll4.clear()
         winPoll4.attron(RED_AND_WHITE)
-        winPoll4.addstr(4, 10, Error_2Str(user_code))
+        winPoll4.addstr(2, 10, Error_2Str(user_code))
         winPoll4.refresh()
             
 
-        sleep(5)
+        sleep(8)
         
 
     else:
