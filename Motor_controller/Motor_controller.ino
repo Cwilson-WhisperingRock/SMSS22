@@ -2,17 +2,17 @@
 // Winter 2022
 // SMSS Motor Controller V1.0
 
-
 #include <TimerOne.h>           // Custom PWM freq
 #include <Wire.h>               // I2C 
 
 
-// Test Variables
+
+// Test Variables (COMMENT OUT TO DESELECT) -- DONT FORGET TO CHANGE ARD ADDRESS (i2c_address) BELOW
 //#define TESTING               // Comment to cancel testing
 //#define SERIAL_COMMS          // Comment to cancel serial comms [manual testing]
 #define I2C_COMMS               // Comment to cancel I2C comms
-#define ard_nano_uno            // Using nano/uno board 
-//#define ard_micro               // Using micro board
+#define ard_nano_uno            // Comment to NOT use nano/uno board 
+//#define ard_micro               // Comment to NOT use micro board
 
 
 // State machine 
@@ -26,37 +26,37 @@ bool TICKET = false;        // true if user supplied data is valid with hardware
 bool FINISH = false;        // true if user requested duration is matched by hardware 
 
 #ifdef ard_nano_uno
-  // Pin Connections 
-  #define STEP 9                // PWM signal for motor
-  #define DIR 6                 // Direction of motor
-  #define STBY 2                // Controller's standby enable (both EN and STBY must be low for low power mode)
-  #define M1 7                  // microstep config bit 1
-  #define M2 8                  // microstep config bit 2
-  // NOTE : STEP, DIR, M2, M1 are all used to set the microstep in the init latching 
-  //        but only STEP and DIR are availible after init
-
-
-  // LED State Indicators
-  #define YELLOW 3
-  #define GREEN 4
-  #define WHITE 10 
-  #define BLUE 11
+    // Pin Connections 
+    #define STEP 9                // PWM signal for motor
+    #define DIR 6                 // Direction of motor
+    #define STBY 2                // Controller's standby enable (both EN and STBY must be low for low power mode)
+    #define M1 7                  // microstep config bit 1
+    #define M2 8                  // microstep config bit 2
+    // NOTE : STEP, DIR, M2, M1 are all used to set the microstep in the init latching 
+    //        but only STEP and DIR are availible after init
+  
+  
+    // LED State Indicators
+    #define YELLOW 3
+    #define GREEN 4
+    #define WHITE 10 
+    #define BLUE 11
 #endif
 
 
 #ifdef ard_micro
-  // Pin Connections 
-  #define STEP 5                
-  #define DIR 4                 
-  #define STBY 6                
-  #define M1 7                  
-  #define M2 8                  
-
-  // LED State Indicators
-  #define YELLOW 9
-  #define GREEN 10
-  #define WHITE 11 
-  #define BLUE 12
+    // Pin Connections 
+    #define STEP 5                
+    #define DIR 4                 
+    #define STBY 6                
+    #define M1 7                  
+    #define M2 8                  
+  
+    // LED State Indicators
+    #define YELLOW 9
+    #define GREEN 10
+    #define WHITE 11 
+    #define BLUE 12
 
 #endif
 
@@ -91,12 +91,12 @@ char step_config = S_FULL;                  // Set default to full step
 #define INTERNAL_STEP 200                   // Internal step size of the motor
 #define GEAR_RATIO  99.05                   // gear ratio of the planetary gear
 #define THREAD_PITCH  0.005                 // thread pitch of the actuator's screw [m]
-float syr_capacity = 30;             // capacity of syringe in mL
-float syr_radius_user = 11;           // RADIUS of the 30ml BD syringe [m]
+float syr_capacity = 30;                    // capacity of syringe in mL
+float syr_radius_user = 11;                 // RADIUS of the 30ml BD syringe [m]
 float q_user = 0;                           // volumetric flow rate as requested by user [L/s]
 float freq = 200;                           // [sec/step]
-unsigned long sec_user = 0;                  // User requested sec duration
-unsigned long min_user = 0;                  // User requested min duration
+unsigned long sec_user = 0;                 // User requested sec duration
+unsigned long min_user = 0;                 // User requested min duration
 unsigned long hour_user = 0;                // User "         hour "
 unsigned long duration = 0;                 // Run time {msec}
 unsigned long time_stamp_start = 0;         // time keeping 
@@ -105,70 +105,67 @@ unsigned long time_stamp_end = 0;           // "
 
 // Serial Variables
 #ifdef SERIAL_COMMS
-  char receivedChar;                          // pool for char data
-  boolean newData_char = false;               // true if new char data is RX 
-  boolean newData_str = false;                // true if new str data is RX 
-  const byte numChars = 32;                   // str length when TX 
-  char receivedChars[numChars];               // pool for str data 
-  bool displayed = false;                     // true if graphic is displayed 
+    char receivedChar;                          // pool for char data
+    boolean newData_char = false;               // true if new char data is RX 
+    boolean newData_str = false;                // true if new str data is RX 
+    const byte numChars = 32;                   // str length when TX 
+    char receivedChars[numChars];               // pool for str data 
+    bool displayed = false;                     // true if graphic is displayed 
 #endif
 
 // I2C Variables
 #ifdef I2C_COMMS
 
-  // I2C Addresses
-  #define PI_ADD 0x01                         // Pi address
-  #define ARD_ADD_1 0x14                      // Arduino #1
-  #define ARD_ADD_2 0x28                      // Arduino #2
-  #define ARD_ADD_3 0x42                      // Arduino #3
-  int i2c_address = ARD_ADD_1;
-
-  // I2C Variables
-  int poll_user = 0;                       // run state of the ard [OFF(0), JOG(1), START(2) ]
-  int recData = 0;                         // storage for dictation codes
-  char strRX[2000];                          // RX storage
-  char dur_mark = 0;                        // marker to aid recv/req track incoming hour, min, sec 
-  bool datapull_flag = false;               // completed datapull from I2C
-  int motor_dir = 0;                       // [ (0) - REV, (1) - FWD, (2) - *BACK to STANDBY] *some cases(change l8r)
-
-  // Pi's Dictating (main) codes 
-  #define POLLDATA 1                        // Ard will recv[OFF, JOG, START] 
-  #define Q_DATA 2                          // Ard will recv[q_user]
-  #define R_DATA 3                          // Ard will recv[syr_radius_user]
-  #define CAP_DATA 4                        // Ard will recv[syr_capacity]
-  #define DUR_DATA 5                        // Ard will recv[hour_user, min_user, sec_user]
-  #define DIR_DATA 6                        // Ard will recv[DIRECTION]
-  #define EVENT_DATA 7                      // Ard will proceed to RUN
-  #define ESTOP_DATA 8                      // Ard will proceed to STOP
-  #define REDO_DATA 9                       // Ard will reset to STANDBY from DATAPULL
-  #define BLOCK_DATA 10
-
-  // Arduino's Requested (Sub) codes                       
-  #define LARGE_ERR 0x3                     // User req too large (Q) for hardware constraints
-  #define SMALL_ERR 0x4                     // User req too small (Q) for hardware constraints
-  #define DUR_ERR 0x5                       // User req too long (time) for hardware constraints
-  #define LD_ERR 0x6                        // User too large and long
-  #define SD_ERR 0x7                        // user too small and long
-  #define DICT_ERR 0x8                      // wrong dictating codes
-  #define NO_ERR 0x10                       // No error to report          
-  char error_code = NO_ERR;
-
-  #define WAIT_CODE 0x15                    // Ard needs time to pull data and validate 
-  #define FINISH_CODE 0x16                  // Ard's duration has been reached and finished RUN_S
-  #define TIME_CODE 0x17                    // Ard is not done with RUN_S and will return time(h,m,s) if prompted
-  bool redo_flag = false;
-  bool time_flag = false;                   // bool to help with req time code [ true - sent TIME_CODE already]
-  char block_recv = 0;
-  unsigned long block[6] = {0,0,0,0,0,0};       // [BLOCK_DATA, dict_code, fac1, rem1, fac2, rem2] for data RX (I2c only transmitts 256 bit)
-
-
-  // Arduino checkpoints
-  bool dp_checkpoint = false;               // true - ard has finished processing TICKET
-  bool eventstart = false;                  // true - Pi has req to RUN the DATAPULL'd ard 
-  bool estop_user = false;                  // true - Pi req arduino to stop
+    // I2C Addresses
+    #define PI_ADD 0x01                         // Pi address
+    #define ARD_ADD_1 0x14                      // Arduino #1
+    #define ARD_ADD_2 0x28                      // Arduino #2
+    #define ARD_ADD_3 0x42                      // Arduino #3
+    int i2c_address = ARD_ADD_1;                // EDIT THIS TO CHANGE ADDRESS
   
-
-    
+    // I2C Variables
+    int poll_user = 0;                       // run state of the ard [OFF(0), JOG(1), START(2) ]
+    int recData = 0;                         // storage for dictation codes
+    char strRX[2000];                          // RX storage
+    char dur_mark = 0;                        // marker to aid recv/req track incoming hour, min, sec 
+    bool datapull_flag = false;               // completed datapull from I2C
+    int motor_dir = 0;                       // [ (0) - REV, (1) - FWD, (2) - *BACK to STANDBY] *some cases(change l8r)
+  
+    // Pi's Dictating (main) codes 
+    #define POLLDATA 1                        // Ard will recv[OFF, JOG, START] 
+    #define Q_DATA 2                          // Ard will recv[q_user]
+    #define R_DATA 3                          // Ard will recv[syr_radius_user]
+    #define CAP_DATA 4                        // Ard will recv[syr_capacity]
+    #define DUR_DATA 5                        // Ard will recv[hour_user, min_user, sec_user]
+    #define DIR_DATA 6                        // Ard will recv[DIRECTION]
+    #define EVENT_DATA 7                      // Ard will proceed to RUN
+    #define ESTOP_DATA 8                      // Ard will proceed to STOP
+    #define REDO_DATA 9                       // Ard will reset to STANDBY from DATAPULL
+    #define BLOCK_DATA 10
+  
+    // Arduino's Requested (Sub) codes                       
+    #define LARGE_ERR 0x3                     // User req too large (Q) for hardware constraints
+    #define SMALL_ERR 0x4                     // User req too small (Q) for hardware constraints
+    #define DUR_ERR 0x5                       // User req too long (time) for hardware constraints
+    #define LD_ERR 0x6                        // User too large and long
+    #define SD_ERR 0x7                        // user too small and long
+    #define DICT_ERR 0x8                      // wrong dictating codes
+    #define NO_ERR 0x10                       // No error to report          
+    char error_code = NO_ERR;
+  
+    #define WAIT_CODE 0x15                    // Ard needs time to pull data and validate 
+    #define FINISH_CODE 0x16                  // Ard's duration has been reached and finished RUN_S
+    #define TIME_CODE 0x17                    // Ard is not done with RUN_S and will return time(h,m,s) if prompted
+    bool redo_flag = false;
+    bool time_flag = false;                   // bool to help with req time code [ true - sent TIME_CODE already]
+    char block_recv = 0;
+    unsigned long block[6] = {0,0,0,0,0,0};   // [BLOCK_DATA, dict_code, fac1, rem1, fac2, rem2] for data RX (I2c only transmitts 256 bit)
+  
+  
+    // Arduino checkpoints
+    bool dp_checkpoint = false;               // true - ard has finished processing TICKET
+    bool eventstart = false;                  // true - Pi has req to RUN the DATAPULL'd ard 
+    bool estop_user = false;                  // true - Pi req arduino to stop
   
 #endif
 
@@ -176,18 +173,19 @@ unsigned long time_stamp_end = 0;           // "
 void setup() {
 
   #ifdef SERIAL_COMMS
-  Serial.begin(9600);                           // Serial comms init
+    Serial.begin(9600);                           // Serial comms init
   #endif
+
 
   #ifdef I2C_COMMS
   
-    #ifdef TESTING
-    Serial.begin(9600);
-    #endif
-  
-  Wire.begin(i2c_address);                        // I2C bus logon with sub address
-  Wire.onReceive(recvEvent);                    // run recvEvent on a main write to read <-
-  Wire.onRequest(reqEvent);                     // run reqEvent on a main read to write ->
+      #ifdef TESTING
+      Serial.begin(9600);
+      #endif
+    
+    Wire.begin(i2c_address);                        // I2C bus logon with sub address
+    Wire.onReceive(recvEvent);                    // run recvEvent on a main write to read <-
+    Wire.onRequest(reqEvent);                     // run reqEvent on a main read to write ->
   #endif
 
   pinMode(STEP, OUTPUT);                        // Setup controller pins
@@ -278,11 +276,11 @@ double MicroCali( float frequency ){
     TICKET = false;                                                         // Mark ticket invalid
     
         #ifdef SERIAL_COMMS
-        Serial.println(" Requested Q value exceeds hardware's MAX RPS");  // Inform user
+          Serial.println(" Requested Q value exceeds hardware's MAX RPS");  // Inform user
         #endif
 
         #ifdef I2C_COMMS
-        error_code = LARGE_ERR;
+          error_code = LARGE_ERR;
         #endif
         
     return MTR_FREQ_MAX;                                                  // Set freq to max
@@ -346,11 +344,11 @@ double MicroCali( float frequency ){
       TICKET = false;
       
         #ifdef SERIAL_COMMS
-        Serial.println(" Requested Q value is below hardware's MIN RPS");  // Inform user
+          Serial.println(" Requested Q value is below hardware's MIN RPS");  // Inform user
         #endif
 
         #ifdef I2C_COMMS
-        error_code = SMALL_ERR;
+          error_code = SMALL_ERR;
         #endif
         
     return MTR_RES_MIN;                                                  // Set freq to min
@@ -417,10 +415,10 @@ void validDur_Start(float Q,float Vol, float Time){
       digitalWrite(YELLOW, HIGH);         // LED indicator
   
           if(displayed == false){                                           // dont print unless its the first
-          Serial.println(" ~~~~~~~~~~~~Standby Mode~~~~~~~~~~~ ");
-          Serial.println(" Press S for START mode or J for JOG (No line ending) \n\n\n\n");
-          displayed = true;
-          }
+            Serial.println(" ~~~~~~~~~~~~Standby Mode~~~~~~~~~~~ ");
+            Serial.println(" Press S for START mode or J for JOG (No line ending) \n\n\n\n");
+            displayed = true;
+            }
           
           recvOneChar();
              
@@ -1032,144 +1030,34 @@ void validDur_Start(float Q,float Vol, float Time){
 
 
 
-  /* ~~~~~~~~~~~~~~~~~~~~~~~~ recvEvent() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-   *  Purpose : Read the incoming data from main's request
-   *  Input : I2C Rx codes from Pi
-   *  Output : [global] user variable write
-   
-  void recvEvent(int numBytes_TX){
-
-    // Read the dictating code first
-    if (recData == 0 || recData == -1){             // 0 for init and -1 for i2cdetect query
-      
-      recData = Wire.read();
-  
-      #ifdef TESTING
-      Serial.print("recData : ");
-      Serial.println(recData, HEX); 
-      Serial.print("numBytes : ");
-      Serial.println(numBytes_TX);
-      #endif
-    }
-
-
-    // If dictating code is known, transfer data to the correct variable
-    else{
-      switch(recData){
-
-          case POLLDATA:
-            poll_user = Wire.read();             
-            recData = 0;                      
-            break;
-
-          case Q_DATA:
-            q_user = Wire.read();
-            q_user /= 1000000000;
-            recData = 0;
-            break;
-  
-          case R_DATA:
-            syr_radius_user = Wire.read();             
-            syr_radius_user /= 1000;
-            recData = 0;
-            break;
-  
-          case CAP_DATA:
-            syr_capacity = Wire.read();             
-            recData = 0;
-            break;
-  
-          case DUR_DATA:
-            if(dur_mark == 0){
-              hour_user = Wire.read();
-              dur_mark++;
-              }
-            else if (dur_mark == 1){
-              min_user = Wire.read();
-              dur_mark++;
-              }
-            else if (dur_mark == 2){
-              sec_user = Wire.read();             
-              dur_mark = 0;
-            }
-
-            recData = 0;
-            break;
-  
-          case DIR_DATA: 
-            motor_dir = Wire.read();             
-            datapull_flag = true;                             
-
-            #ifdef TESTING
-              Serial.println(poll_user);
-              Serial.println(q_user,10);
-              Serial.println(syr_radius_user,8);
-              Serial.println(syr_capacity);
-              Serial.println(hour_user);
-              Serial.println(min_user);
-              Serial.println(sec_user);
-              Serial.println(motor_dir);
-            #endif
-            
-            recData = 0;
-            break;
-
-          case EVENT_DATA:
-            eventstart = true;             
-            recData = 0;                      
-            break;
-
-          case REDO_DATA:
-            redo_flag = Wire.read(); 
-            Serial.println("STOPPED");
-            state = STOP;            
-            recData = 0;
-            break;
-
-          case ESTOP_DATA:
-            estop_user = Wire.read();
-            recData = 0;
-            break;
-
-          default:
-            error_code = DICT_ERR;
-            recData = 0;
-            break;
-      }
-    }
-
-  }
-  */
-
-
 void recvEvent(int numBytes){
 
     unsigned long temp;
   
     recData = Wire.read();
 
-    //First recv is BLOCK_DATA unless rollcall (0)
+    // Ignore data unless recv BLOCK_CODE
     if(block_recv == 0){
-
-      //Ignore data is not a block (its rollcall or i2cdetect instead)
-      if(recData == BLOCK_DATA){
-        //block[0] = recData;
-        block_recv++;
-      }
-      
-      
+        //Ignore data is not a block (its rollcall or i2cdetect instead)
+        if(recData == BLOCK_DATA){
+          //block[0] = recData;
+          block_recv++;
+        }
     }
 
-    else if (block_recv == 1){
-      block[1] = recData;
-      block_recv++;
 
-       #ifdef TESTING
-        Serial.print("block[1] : ");
-        Serial.println(block[1]); 
-      #endif
+    // Recv first data block
+    else if (block_recv == 1){
+        block[1] = recData;
+        block_recv++;
+  
+         #ifdef TESTING
+          Serial.print("block[1] : ");
+          Serial.println(block[1]); 
+        #endif
       }
-      
+
+    // Recv second data block
     else if (block_recv == 2){
       block[2] = recData;
       block_recv++;
@@ -1180,7 +1068,8 @@ void recvEvent(int numBytes){
       #endif
       
       }
-      
+
+    // Recv third data block
     else if (block_recv == 3){
       block[3] = recData;
       block_recv++;
@@ -1190,7 +1079,8 @@ void recvEvent(int numBytes){
         Serial.println(block[3]); 
       #endif
       }
-      
+
+    // Recv fourth data block
     else if (block_recv == 4){
       block[4] = recData;
       block_recv++;
@@ -1201,6 +1091,7 @@ void recvEvent(int numBytes){
       #endif
       }
 
+    // Recv fifth data block
     else if (block_recv == 5){
       block[5] = recData;
       block_recv++;
@@ -1226,6 +1117,7 @@ void recvEvent(int numBytes){
           temp = 256 * block[2]  + block[3];
           }
 
+        // Recv data is below 256
         else{temp = block[3];}
 
         #ifdef TESTING
