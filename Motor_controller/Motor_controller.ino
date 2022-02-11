@@ -11,8 +11,8 @@
 //#define TESTING               // Comment to cancel testing
 //#define SERIAL_COMMS          // Comment to cancel serial comms [manual testing]
 #define I2C_COMMS               // Comment to cancel I2C comms
-#define ard_nano_uno            // Comment to NOT use nano/uno board 
-//#define ard_micro               // Comment to NOT use micro board
+//#define ard_nano_uno            // Comment to NOT use nano/uno board 
+#define ard_micro               // Comment to NOT use micro board
 
 
 // State machine 
@@ -121,7 +121,7 @@ unsigned long time_stamp_end = 0;           // "
     #define ARD_ADD_1 0x14                      // Arduino #1
     #define ARD_ADD_2 0x28                      // Arduino #2
     #define ARD_ADD_3 0x42                      // Arduino #3
-    int i2c_address = ARD_ADD_1;                // EDIT THIS TO CHANGE ADDRESS
+    int i2c_address = ARD_ADD_3;                // EDIT THIS TO CHANGE ADDRESS
   
     // I2C Variables
     int poll_user = 0;                       // run state of the ard [OFF(0), JOG(1), START(2) ]
@@ -919,6 +919,10 @@ void validDur_Start(float Q,float Vol, float Time){
 
     case RUN_J:
 
+        // Device order delay
+        if (i2c_address == ARD_ADD_1){delay(1800);}
+        else if(i2c_address == ARD_ADD_2){delay(900);}
+      
         digitalWrite(GREEN, HIGH);                                               // LED indicator
         digitalWrite(WHITE, HIGH);                                              // LED indicator
 
@@ -944,9 +948,12 @@ void validDur_Start(float Q,float Vol, float Time){
 
 
     case RUN_S:
+
+      // Device order delay
+      if (i2c_address == ARD_ADD_1){delay(1800);}
+      else if(i2c_address == ARD_ADD_2){delay(900);}
     
       digitalWrite(GREEN, HIGH);                                               // LED indicator
-
       
       if(estop_user == true){
           digitalWrite(GREEN, LOW);                                               // LED indicator
@@ -1216,7 +1223,7 @@ void recvEvent(int numBytes){
 
     
     // Tell Pi RUN_S has finished 
-    if(FINISH == true && time_flag == false){
+    if(FINISH == true){
       Wire.write(FINISH_CODE);
       estop_user = true;       
     }
