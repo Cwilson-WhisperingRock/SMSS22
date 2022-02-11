@@ -78,6 +78,9 @@ TIME_CODE =  0x17                   # Ard is not done with RUN_S and will return
 
 
 user_code = 0                       # working variable
+
+global estop_index
+estop_index = 0
     
 def main():
 
@@ -286,64 +289,84 @@ def main():
         # Run motors, present estops, and monitor devices
         elif Hub.state == 'RUN' :
 
+            # var to save redundant time checking
+            time_saver = [0,0,0]
 
-            # if at least one device is still on
+            # Print intro RUN window if device is on
+            reqGUI = RUN
+            for i in range(3):
+                if rollcall[i] > 0: 
+                    column = COL_CONST * i + COL_OFFSET
+                    curs(stdscr)
+
+            # Loop if at least one device is on
             while (poll_user[0] != 0 or  poll_user[1] != 0  or  poll_user[2] != 0) :
+
+                #Poll for an estop
+                reqGUI = USER_ESTOP
+                curs(stdscr)
 
                 for i in range(3):
 
-                    if rollcall[i] > 0:
-                        #print curse window 
-                        column = COL_CONST * i + COL_OFFSET
-                        reqGUI = RUN
-                        curs(stdscr)
+                    # If user has marked one or all estops during a pull, send tx and stop
+                    if estop_flag[0] == True and poll_user[0] > 0:
+                        transmit_block(address[0], ESTOP_DATA, True )
+                        poll_user[0] = 0
 
-                    # if device is on
-                    if (rollcall[i] > 0 and poll_user[i] > 0):
+                    if estop_flag[1] == True and poll_user[1] > 0:
+                        transmit_block(address[1], ESTOP_DATA, True )
+                        poll_user[1] = 0
 
-
-                        # Ask for an ESTOP
-                        column = COL_CONST * i + COL_OFFSET
-                        reqGUI = USER_ESTOP
-                        curs(stdscr)
-
-                        #if user selected to stop
-                        if estop_flag[i] == True:
-                            
-                            #transmit estop to ard
-                            transmit_block(address[i], ESTOP_DATA, True )
-
-                            #Put device (in pi) in standby
-                            poll_user[i] = 0
-
-                        # else poll ARD for FINISH/ time remaining
-                        elif poll_user[i] == 2:
-
-                            # Read ard to see its status (FINISH or !FINISH)
-                            with SMBus(1) as bus: 
-                                user_code = bus.read_byte(address[i], 0)
+                    if estop_flag[2] == True and poll_user[2] > 0:
+                        transmit_block(address[2], ESTOP_DATA, True )
+                        poll_user[2] = 0
+                        
+                    # if it is time to sample the RUN_S state for FINISH or TIME
+                    if time_saver[i] > 300 and poll_user[i] == 2:
+                        
+                        # Read ard status (FINISH or TIME_CODE)
+                        with SMBus(1) as bus: 
+                            user_code = bus.read_byte(address[i], 0)
 
                             #if FINISH, dont repoll device
                             if user_code == FINISH_CODE:
                                 poll_user[i] = 0
-                                    
+                                #FINISH SCREEN
+
+                            # if time_code, read data and store
                             elif user_code == TIME_CODE:
                                 
                                 global ard_duration
                                 
                                 with SMBus(1) as bus:
-                                    
                                     for j in range(3):
-
                                         ard_duration[i][j]  = bus.read_byte(address[i], 0)
 
+                                # Print time data
+                                reqGUI = RUN
+                                column = COL_CONST * i + COL_OFFSET
+                                curs(stdscr)
+
+                                #reset var
+                                time_saver[i] = 0
                                 
-                                        
-            
+                    elif time_saver[i] > 300 and poll_user[i] == 1:
+                        # Print time data
+                        reqGUI = RUN
+                        column = COL_CONST * i + COL_OFFSET
+                        curs(stdscr)
+                        time_saver[i] = 0
+                                
+                                
+                    time_saver[i] += 1
+
+            #Proceed if all devices are finished
             Hub.DONE()
 
+                        
+           
         #reset variables
-        elif Hub.state == 'RUN' :
+        elif Hub.state == 'RESET' :
             rollcall = [0, 0, 0]
             poll_user = [0, 0, 0]
             q_user = [0,0,0]
@@ -357,8 +380,10 @@ def main():
             estop_flag = [False, False, False]                              
             ard_duration = [[0,0,0], [0,0,0], [0,0,0]]                      
             user_code = 0
+            global estop_index
+            estop_index = 0
 
-            Hub.RESET()
+            Hub.RESTART()
 
 
 # Error_2Str()
@@ -380,6 +405,8 @@ def Error_2Str(error):
         return "Error : Too small of Q + time overflow"
     elif error == DICT_ERR:
         return "Error : Ard got lost...GULP"
+    else:
+        return f"Your error code is unique... : {error}"
 
     
 
@@ -445,6 +472,7 @@ def curs(stdscr):
     global reqGUI
     global rollcall, poll_user, q_user, radius_user, cap_user
     global hour_user, min_user, sec_user, dir_user
+    global estop_index
     
 
     # Color combinations (ID, foreground, background)
@@ -545,7 +573,7 @@ def curs(stdscr):
             winPoll1.nodelay(True)
             winPoll1.clear()
             winPoll1.attron(BLACK_AND_GREEN)
-            winPoll1.addstr(1, 5, "Device 1 Mode :      | OFF | JOG | RUN |")
+            winPoll1.addstr(1, 5,f"Device {index_gui + 1} Mode :      | OFF | JOG | RUN |")
             winPoll1.refresh()
             
             # collect data
@@ -556,7 +584,7 @@ def curs(stdscr):
 
                 winPoll1.attroff(BLACK_AND_WHITE)     
                 winPoll1.attron(BLACK_AND_GREEN)
-                winPoll1.addstr(1, 5, "Device 1 Mode :      | OFF | JOG | RUN |")
+                winPoll1.addstr(1, 5, f"Device {index_gui + 1} Mode :      | OFF | JOG | RUN |")
 
                 try:
                     key = winPoll1.getkey()
@@ -822,7 +850,7 @@ def curs(stdscr):
                 winRun1.attron(BLACK_AND_RED)
 
                 winRun1.addstr(0, 0, f" Q [nL/s] : {q_user[index_gui]}    Syringe Radius in [mm] : {radius_user[index_gui]}")
-                winRun1.addstr(4, 18, "| ESTOP |")
+                #winRun1.addstr(4, 18, "| ESTOP |")
                 winRun1.refresh()
 
              # User selected RUN function
@@ -833,43 +861,70 @@ def curs(stdscr):
                 winRun1.addstr(0, 0, f" Q [nL/s] : {q_user[index_gui]}    Syringe Radius in [mm] : {radius_user[index_gui]}")
                 winRun1.addstr(1, 0, f" Requested - Hour : {hour_user[index_gui]}    Minute : {min_user[index_gui]}   Second : {sec_user[index_gui]}")
                 winRun1.addstr(2, 0, f" Elapsed - Hour : {ard_duration[index_gui][0]}       Minute :  {ard_duration[index_gui][1]}     Second : {ard_duration[index_gui][2]}    ")
-                winRun1.addstr(4, 18, "| ESTOP |")
+                #winRun1.addstr(4, 18, "| ESTOP |")
                 winRun1.refresh()
                
-            sleep(1)
+            #sleep(1)
 
 
     # Simple ESTOP button
     elif reqGUI == USER_ESTOP:
 
-        #avoiding a global index here people...forgive me coding gods
-        index_gui = int((column-5)/7)
+        COL_CONST = 7
+        COL_OFFSET = 5
+
+        global estop_flag
 
         # display window
-        winPoll4 = curses.newwin(1, 60, column+4, 30)
+        winStop = curses.newwin(1, 60, 25 , 30)
         curses.noecho()
-        winPoll4.nodelay(True)
-        winPoll4.clear()
-        winPoll4.attron(curses.color_pair(random.randint(1,6)))
-        winPoll4.addstr(0, 18, "| ESTOP |")
-        winPoll4.refresh()
+        winStop.nodelay(True)
+        winStop.clear()
+        winStop.refresh()
             
-        sleep(1)
-
         key = ""
-
         try:
-            key = winPoll4.getkey()
+            key = winStop.getkey()
         except:
             key = None
                 
-        winPoll4.refresh()
-
         if key == 'w':
-            global estop_flag
-            estop_flag[index_gui] = True
-            winPoll4.addstr(0, 18, "| ESTOPppd |")
-            winPoll4.refresh()
+            if estop_index > 0:
+                estop_index -= 1
+                
+        elif key == 's':
+            if estop_index < 3:
+                estop_index += 1
+
+
+        if estop_index < 3 and poll_user[estop_index] > 0:
+            winStop.mvwin(estop_index * COL_CONST + 9, 30)
+            winStop.attron(curses.color_pair(estop_index))
+            winStop.addstr(0,18, "| ESTOP? |")
+            winStop.refresh()
+        
+        elif estop_index == 3:
+            winStop.mvwin(25, 30)
+            winStop.attron(BLACK_AND_RED)
+            winStop.addstr(0,18, "| ESTOP ALL? |")
+            winStop.refresh()
+
+                
+        if key == 'd':
+
+            # stop indiv device
+            if estop_index != 3:
+                estop_flag[estop_index] = True
+                winStop.attron(BLACK_AND_GREEN)
+                winStop.addstr(0,18, "| STOP'D |")
+                winStop.refresh()
+
+            # stop all devices
+            elif estop_index == 3:
+                estop_flag[0] = True
+                estop_flag[1] = True
+                estop_flag[2] = True
+                estop_index = 0
             
 
     # Presents error string in device window
