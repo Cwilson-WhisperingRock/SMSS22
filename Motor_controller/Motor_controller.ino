@@ -2,7 +2,7 @@
 // Winter 2022
 // SMSS Motor Controller V1.0
 
-#include <TimerOne.h>           // Custom PWM freq
+#include <TimerOne.h>           // Custom PWM freq (ONLY WORKS WITH MEGA328 - NO MICRO BOARDS)
 #include <Wire.h>               // I2C 
 
 
@@ -11,8 +11,8 @@
 //#define TESTING               // Comment to cancel testing
 //#define SERIAL_COMMS          // Comment to cancel serial comms [manual testing]
 #define I2C_COMMS               // Comment to cancel I2C comms
-//#define ard_nano_uno            // Comment to NOT use nano/uno board 
-#define ard_micro               // Comment to NOT use micro board
+#define ard_nano_uno            // Comment to NOT use nano/uno board 
+//#define ard_micro               // Comment to NOT use micro board
 
 
 // State machine 
@@ -24,6 +24,23 @@ unsigned int state = STANDBY;                                           // defau
 #define ESTOP 'E'
 bool TICKET = false;        // true if user supplied data is valid with hardware
 bool FINISH = false;        // true if user requested duration is matched by hardware 
+
+#ifdef ard_micro
+    // Pin Connections 
+    #define STEP 5                
+    #define DIR 4                 
+    #define STBY 6                
+    #define M1 7                  
+    #define M2 8                  
+  
+    // LED State Indicators
+    #define YELLOW 9
+    #define GREEN 10
+    #define WHITE 11 
+    #define BLUE 12
+
+#endif
+
 
 #ifdef ard_nano_uno
     // Pin Connections 
@@ -44,21 +61,7 @@ bool FINISH = false;        // true if user requested duration is matched by har
 #endif
 
 
-#ifdef ard_micro
-    // Pin Connections 
-    #define STEP 5                
-    #define DIR 4                 
-    #define STBY 6                
-    #define M1 7                  
-    #define M2 8                  
-  
-    // LED State Indicators
-    #define YELLOW 9
-    #define GREEN 10
-    #define WHITE 11 
-    #define BLUE 12
 
-#endif
 
 // Motor States
 #define FORWARD LOW           // motor direction for pin logic
@@ -81,7 +84,7 @@ char step_config = S_FULL;                  // Set default to full step
 
 
 // Pulse/Freq Variables
-#define DC  0.6 * 1024                      // Duty Cycle of PWM                                          [UNSURE WHAT RATIO IS BEST]
+#define DC  0.5 * 1024                      // Duty Cycle of PWM                                          [UNSURE WHAT RATIO IS BEST]
 #define MTR_FREQ_MAX 875                    // Max freq motor can handle [Hz]
 #define MTR_RES_MIN 120                     // Min freq for smooth performance [Hz]
 #define MTR_FREQ_MIN 0                      // Min freq motor can handle [Hz]                             [UNKNOWN]
@@ -129,7 +132,7 @@ unsigned long time_stamp_end = 0;           // "
     char strRX[2000];                          // RX storage
     char dur_mark = 0;                        // marker to aid recv/req track incoming hour, min, sec 
     bool datapull_flag = false;               // completed datapull from I2C
-    int motor_dir = 0;                       // [ (0) - REV, (1) - FWD, (2) - *BACK to STANDBY] *some cases(change l8r)
+    int motor_dir = FORWARD;                  // [ (1) - REV, (0) - FWD, (2) - *BACK to STANDBY] *some cases(change l8r)
   
     // Pi's Dictating (main) codes 
     #define POLLDATA 1                        // Ard will recv[OFF, JOG, START] 
@@ -677,6 +680,7 @@ void validDur_Start(float Q,float Vol, float Time){
           break;
   
       case STOP:
+          digitalWrite(STBY, LOW);                                             // Place motor controller in standby
           Timer1.disablePwm(STEP);                                             // turn off motor
           RUNNING = false;
           TICKET = false;
@@ -862,7 +866,6 @@ void validDur_Start(float Q,float Vol, float Time){
         // if all pulled data is valid, Pi has valid TICKET, and is ready to run
         else if(TICKET == true && eventstart == true){                            // Must lie within Q and duration range
           digitalWrite(BLUE, LOW);                                                // LED indicator
-          init_control(step_config);                                              // Calibrate controller
           datapull_flag = false;
           eventstart = false;
           TICKET = false;
@@ -904,7 +907,6 @@ void validDur_Start(float Q,float Vol, float Time){
         else if(TICKET == true && eventstart == true){
           digitalWrite(BLUE, LOW);                                               // LED indicator
           digitalWrite(WHITE, LOW);                                              // LED indicator
-          init_control(step_config);                                              // Calibrate controller
           datapull_flag = false;
           eventstart = false;
           TICKET = false;
@@ -935,6 +937,10 @@ void validDur_Start(float Q,float Vol, float Time){
         
         else if (RUNNING == false){
             init_control(step_config);                              // setup motor controller
+
+            if (motor_dir == 0){digitalWrite(DIR,FORWARD);}          // rewrite DIR pin for direction
+            else{digitalWrite(DIR,REVERSE);}
+            
             digitalWrite(DIR, DIRECTION);                           // rewrite DIR pin for direction
             Timer1.initialize((1/freq) * 1000000);                  // Init PWM freq[microsec] (mult to conv to usec)
             Timer1.pwm(STEP, DC);                                   // Start motor  
@@ -971,7 +977,10 @@ void validDur_Start(float Q,float Vol, float Time){
       // init run of motor
       else if (RUNNING == false){
           init_control(step_config);                              // setup motor controller
-          digitalWrite(DIR, DIRECTION);                           // rewrite DIR pin for direction
+          
+          if (motor_dir == 0){digitalWrite(DIR,FORWARD); }         // rewrite DIR pin for direction
+          else{digitalWrite(DIR,REVERSE);}
+          
           Timer1.initialize((1/freq) * 1000000);                  // Init PWM freq[microsec] (mult to conv to usec)
           time_stamp_start = millis();                            // Start recording time
           Timer1.pwm(STEP, DC);                                   // Start motor  
@@ -992,13 +1001,15 @@ void validDur_Start(float Q,float Vol, float Time){
       break;
 
     case STOP:
-    
-        Timer1.disablePwm(STEP);                                             // turn off motor
+
+        digitalWrite(STBY, LOW);                                             // Place motor controller in standby
+        Timer1.disablePwm(STEP);                                             // turn off pwm
 
         digitalWrite(GREEN, LOW);                                               // LED indicator
         digitalWrite(WHITE, LOW);
         digitalWrite(YELLOW, LOW);                                               // LED indicator
         digitalWrite(BLUE, LOW);
+        
         q_user = 0;                                                   
         syr_radius_user = 0;
         freq = 0;
