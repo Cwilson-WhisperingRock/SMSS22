@@ -8,7 +8,7 @@
 
 
 // Test Variables (COMMENT OUT TO DESELECT) -- DONT FORGET TO CHANGE ARD ADDRESS (i2c_address) BELOW
-//#define TESTING               // Comment to cancel testing
+#define TESTING               // Comment to cancel testing
 //#define SERIAL_COMMS          // Comment to cancel serial comms [manual testing]
 #define I2C_COMMS               // Comment to cancel I2C comms
 #define ard_nano_uno            // Comment to NOT use nano/uno board 
@@ -938,10 +938,20 @@ void validDur_Start(float Q,float Vol, float Time){
         else if (RUNNING == false){
             init_control(step_config);                              // setup motor controller
 
-            if (motor_dir == 0){digitalWrite(DIR,FORWARD);}          // rewrite DIR pin for direction
-            else{digitalWrite(DIR,REVERSE);}
-            
-            digitalWrite(DIR, DIRECTION);                           // rewrite DIR pin for direction
+            if (motor_dir == 1){
+              
+                #ifdef TESTING
+                  Serial.println("FORWARD MOTOR ");
+                #endif
+              digitalWrite(DIR,LOW);}          
+              
+            else{
+                #ifdef TESTING
+                  Serial.println("REVERSE MOTOR ");
+                #endif
+              digitalWrite(DIR,HIGH);}
+
+          
             Timer1.initialize((1/freq) * 1000000);                  // Init PWM freq[microsec] (mult to conv to usec)
             Timer1.pwm(STEP, DC);                                   // Start motor  
             RUNNING = true;
@@ -978,7 +988,7 @@ void validDur_Start(float Q,float Vol, float Time){
       else if (RUNNING == false){
           init_control(step_config);                              // setup motor controller
           
-          if (motor_dir == 0){digitalWrite(DIR,FORWARD); }         // rewrite DIR pin for direction
+          if (motor_dir == 1){digitalWrite(DIR,FORWARD); }         // rewrite DIR pin for direction
           else{digitalWrite(DIR,REVERSE);}
           
           Timer1.initialize((1/freq) * 1000000);                  // Init PWM freq[microsec] (mult to conv to usec)
