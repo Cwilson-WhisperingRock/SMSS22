@@ -2,7 +2,7 @@
 // Winter 2022
 // SMSS Motor Controller V1.0
 
-#include <TimerOne.h>           // Custom PWM freq (ONLY WORKS WITH MEGA328 - NO MICRO BOARDS)
+#include <TimerOne.h>           // Custom PWM freq (ONLY WORKS WITH MEGA328 - NO MICRO BOARDS) - PWM only for pins(9, 10) on nano
 #include <Wire.h>               // I2C 
 
 
@@ -11,8 +11,8 @@
 #define TESTING               // Comment to cancel testing
 //#define SERIAL_COMMS          // Comment to cancel serial comms [manual testing]
 #define I2C_COMMS               // Comment to cancel I2C comms
-#define ard_nano_uno            // Comment to NOT use nano/uno board 
-//#define ard_micro               // Comment to NOT use micro board
+//#define STSPIN220             // Comment out to NOT use the STSPIN220 Pololu low-volt motor controller
+#define STSPIN820             // Comment out to NOT use the STSPIN820 Pololu high-volt motor controller
 
 
 // State machine 
@@ -25,42 +25,72 @@ unsigned int state = STANDBY;                                           // defau
 bool TICKET = false;        // true if user supplied data is valid with hardware
 bool FINISH = false;        // true if user requested duration is matched by hardware 
 
-#ifdef ard_micro
+
+
+#ifdef STSPIN220 // Low voltage motor controller library
     // Pin Connections 
-    #define STEP 5                
-    #define DIR 4                 
-    #define STBY 6                
-    #define M1 7                  
-    #define M2 8                  
-  
-    // LED State Indicators
-    #define YELLOW 9
-    #define GREEN 10
-    #define WHITE 11 
-    #define BLUE 12
-
-#endif
-
-
-#ifdef ard_nano_uno
-    // Pin Connections 
+    #define M1 2                  // microstep config bit 1
+    #define M2 3                  // microstep config bit 2
+    #define STBY 5                // Controller's standby enable (both EN and STBY must be low for low power mode)
     #define STEP 9                // PWM signal for motor
-    #define DIR 6                 // Direction of motor
-    #define STBY 2                // Controller's standby enable (both EN and STBY must be low for low power mode)
-    #define M1 7                  // microstep config bit 1
-    #define M2 8                  // microstep config bit 2
+    #define DIR 7                 // Direction of motor
     // NOTE : STEP, DIR, M2, M1 are all used to set the microstep in the init latching 
     //        but only STEP and DIR are availible after init
   
   
     // LED State Indicators
-    #define YELLOW 3
-    #define GREEN 4
-    #define WHITE 10 
-    #define BLUE 11
+    #define YELLOW 8
+    #define BLUE 10
+    #define WHITE 11 
+    #define GREEN 12
+
+
+
+        // Microstep settings for md39a[ M1, M2, STEP, DIR ]
+    #define S_FULL  0x0
+    #define S_HALF  0xA
+    #define S_QRTR  0x5
+    #define S_8     0xE
+    #define S_16    0xF
+    #define S_32    0x4
+    #define S_64    0xD
+    #define S_128   0x8
+    #define S_256   0x6
+    char step_config = S_FULL;                  // Set default to full step
 #endif
 
 
+#ifdef STSPIN820 // High voltage motor controller library
+    // Pin Connections 
+    #define M1 2                  // microstep config bit 1
+    #define M2 3                  // microstep config bit 2
+    #define M3 4                  // microstep config bit 3
+    #define STBY 5                // Controller's standby enable (both EN and STBY must be low for low power mode)
+    #define STEP 9                // PWM signal for motor
+    #define DIR 7                 // Direction of motor
+    // NOTE : M1-3 are used for microstep latching (ie STEP/DIR are not used for latching like the STSPIN220)
+  
+  
+    // LED State Indicators
+    #define YELLOW 8
+    #define BLUE 10
+    #define WHITE 11 
+    #define GREEN 12
+
+
+
+        // Microstep settings for md39a[ M1, M2, STEP, DIR ]
+    #define S_FULL  0x0
+    #define S_HALF  0x4
+    #define S_QRTR  0x2
+    #define S_8     0x6
+    #define S_16    0x1
+    #define S_32    0x5
+    //#define S_64  no 64 bit
+    #define S_128   0x3
+    #define S_256   0x7
+    char step_config = S_FULL;                  // Set default to full step
+#endif
 
 
 // Motor States
@@ -70,21 +100,11 @@ bool DIRECTION = FORWARD;     // motor direction
 bool RUNNING  = false;        // true if motor is running
 
 
-// Microstep settings for md39a[ M1, M2, STEP, DIR ]
-#define S_FULL  0x0
-#define S_HALF  0xA
-#define S_QRTR  0x5
-#define S_8     0xE
-#define S_16    0xF
-#define S_32    0x4
-#define S_64    0xD
-#define S_128   0x8
-#define S_256   0x6
-char step_config = S_FULL;                  // Set default to full step
+
 
 
 // Pulse/Freq Variables
-#define DC  0.5 * 1024                      // Duty Cycle of PWM                                          [UNSURE WHAT RATIO IS BEST]
+#define DC  0.8 * 1024                      // Duty Cycle of PWM                                          [UNSURE WHAT RATIO IS BEST]
 #define MTR_FREQ_MAX 875                    // Max freq motor can handle [Hz]
 #define MTR_RES_MIN 120                     // Min freq for smooth performance [Hz]
 #define MTR_FREQ_MIN 0                      // Min freq motor can handle [Hz]                             [UNKNOWN]
@@ -154,7 +174,7 @@ unsigned long time_stamp_end = 0;           // "
     #define SD_ERR 0x7                        // user too small and long
     #define DICT_ERR 0x8                      // wrong dictating codes
     #define NO_ERR 0x10                       // No error to report          
-    char error_code = NO_ERR;
+    int error_code = NO_ERR;
   
     #define WAIT_CODE 0x15                    // Ard needs time to pull data and validate 
     #define FINISH_CODE 0x16                  // Ard's duration has been reached and finished RUN_S
@@ -197,6 +217,10 @@ void setup() {
   pinMode(M1, OUTPUT);
   pinMode(M2, OUTPUT);
 
+  #ifdef STSPIN820
+    pinMode(M3, OUTPUT);
+  #endif
+
   pinMode(BLUE, OUTPUT);                        // Indicator LED pin setup
   pinMode(YELLOW, OUTPUT);
   pinMode(GREEN, OUTPUT);
@@ -218,14 +242,21 @@ void loop() {
 }
 
 
-/*~~~~~~~~~~~~~~~~~~~~~~~ init_config() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
- *  Purpose : initialize or change the md39a controllers step size
+#ifdef STSPIN220
+/*~~~~~~~~~~~~~~~~~~~~~~~ MtrCtrl_init_220() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ *  Purpose : initialize or change the low voltage md39a controllers step size
  *  Input : 0x4'b  [ M1, M2, STEP, DIR ] as calculated by the requested step setting
  *  Outut : digital write to pins
  *  Notes : ~EN pin is held low 
  */
-void init_control(char pin_config) {
+void MtrCtrl_init_220(char pin_config) {
 
+
+  #ifdef TESTING
+      Serial.print("pin_config : ");
+      Serial.println(pin_config, HEX);
+  #endif
+    
   //The recommended power-up sequence is following:
   
   //1. Power-up the device applying the VS supply voltage but keeping both STBY and EN/FAULT inputs low.
@@ -249,6 +280,56 @@ void init_control(char pin_config) {
   //6. Enable the power stage releasing the EN/FAULT input and start the operation.
 }
 
+#endif
+
+
+
+#ifdef STSPIN820
+
+/*~~~~~~~~~~~~~~~~~~~~~~~ MtrCtrl_init_820() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ *  Purpose : initialize or change the high voltage md37a controllers step size
+ *  Input : 0x4'b  [ M1, M2, M3 ] as calculated by the requested step setting
+ *  Outut : digital write to pins
+ *  Notes : ~EN pin is held low 
+ */
+void MtrCtrl_init_820(char pin_config) {
+
+
+
+  #ifdef TESTING
+      Serial.print("pin_config : ");
+      Serial.println(pin_config, HEX);
+  #endif
+    
+  //The recommended power-up sequence is following:
+  
+  //1. Power-up the device applying the VS supply voltage but keeping both STBY and EN/FAULT inputs low.
+  digitalWrite(STBY, LOW);
+  
+  //2. Set the MODEx inputs according to the target step resolution (see Table 1).
+  digitalWrite(M3, pin_config & 1);
+  digitalWrite(M2, (pin_config >> 1) & 1);
+  digitalWrite(M1, (pin_config >> 2) & 1);
+
+  #ifdef TESTING
+      Serial.println(pin_config & 1);
+      Serial.println((pin_config >> 1) & 1);
+      Serial.println((pin_config >> 2) & 1);
+  #endif
+  
+  //3. Wait for at least 1 µs (minimum tMODEsu time).
+  delayMicroseconds(1);
+  
+  //4. Set the STBY high. The MODEx configuration is now latched inside the device.
+  digitalWrite(STBY, HIGH);
+  
+  //5. Wait for at least 100 µs (minimum tMODEho time).
+  delayMicroseconds(100);
+  
+  //6. Enable the power stage releasing the EN/FAULT input and start the operation.
+}
+
+#endif
 
 /*~~~~~~~~~~~~~~~~~~~~~~~ Q_to_Freq() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  *  Purpose : Convert the requested Q rate into a frequency for the stepper motor 
@@ -325,9 +406,18 @@ double MicroCali( float frequency ){
     }
 
     else if ( microstep <= 64 ){
-      step_config = S_64;
-      TICKET = true;                                                      // Approved ticket                                               
-      return 64 * frequency;                                               
+      
+      // the STSPIN820 doesnt have 64 bit -> make it 128 bit instead
+      #ifdef STSPIN220
+          step_config = S_64;
+          TICKET = true;                                                      // Approved ticket                                               
+          return 64 * frequency;
+     #else
+          step_config = S_128;
+          TICKET = true;                                                      // Approved ticket                                               
+          return 128 * frequency;
+     #endif
+                                                     
     }
 
     else if ( microstep <= 128 ){
@@ -351,7 +441,7 @@ double MicroCali( float frequency ){
         #endif
 
         #ifdef I2C_COMMS
-          error_code = SMALL_ERR;
+          error_code = SMALL_ERR;                                         // report error to pi
         #endif
         
     return MTR_RES_MIN;                                                  // Set freq to min
@@ -623,7 +713,13 @@ void validDur_Start(float Q,float Vol, float Time){
           }
           
           else if (RUNNING == false){
-              init_control(step_config);                              // setup motor controller
+
+              #ifdef STSPIN220
+                  MtrCtrl_init_220(step_config);                              // setup motor controller
+              #else
+                  MtrCtrl_init_820(step_config);                              // setup motor controller
+              #endif
+              
               digitalWrite(DIR, DIRECTION);                           // rewrite DIR pin for direction
               Timer1.initialize((1/freq) * 1000000);                  // Init PWM freq[microsec] (mult to conv to usec)
               Timer1.pwm(STEP, DC);                                   // Start motor  
@@ -659,7 +755,13 @@ void validDur_Start(float Q,float Vol, float Time){
   
           // init run of motor
           else if (RUNNING == false){
-              init_control(step_config);                              // setup motor controller
+            
+              #ifdef STSPIN220
+                  MtrCtrl_init_220(step_config);                              // setup motor controller
+              #else
+                  MtrCtrl_init_820(step_config);                              // setup motor controller
+              #endif
+              
               digitalWrite(DIR, DIRECTION);                           // rewrite DIR pin for direction
               Timer1.initialize((1/freq) * 1000000);                  // Init PWM freq[microsec] (mult to conv to usec)
               time_stamp_start = millis();                            // Start recording time
@@ -921,7 +1023,7 @@ void validDur_Start(float Q,float Vol, float Time){
 
     case RUN_J:
 
-        // Device order delay
+        // Device order delay                    
         if (i2c_address == ARD_ADD_1){delay(1800);}
         else if(i2c_address == ARD_ADD_2){delay(900);}
       
@@ -936,22 +1038,23 @@ void validDur_Start(float Q,float Vol, float Time){
         }
         
         else if (RUNNING == false){
-            init_control(step_config);                              // setup motor controller
-
-            if (motor_dir == 1){
-              
-                #ifdef TESTING
-                  Serial.println("FORWARD MOTOR ");
-                #endif
-              digitalWrite(DIR,LOW);}          
-              
-            else{
-                #ifdef TESTING
-                  Serial.println("REVERSE MOTOR ");
-                #endif
-              digitalWrite(DIR,HIGH);}
-
           
+              #ifdef STSPIN220
+                  MtrCtrl_init_220(step_config);                              // setup motor controller
+              #else
+                  MtrCtrl_init_820(step_config);                              // setup motor controller
+              #endif
+
+            if (motor_dir == 1){digitalWrite(DIR,LOW);}          
+              
+            else{digitalWrite(DIR,HIGH);}
+
+
+                #ifdef TESTING
+                  Serial.print("freq");
+                  Serial.println(freq);
+                #endif
+                
             Timer1.initialize((1/freq) * 1000000);                  // Init PWM freq[microsec] (mult to conv to usec)
             Timer1.pwm(STEP, DC);                                   // Start motor  
             RUNNING = true;
@@ -986,7 +1089,12 @@ void validDur_Start(float Q,float Vol, float Time){
   
       // init run of motor
       else if (RUNNING == false){
-          init_control(step_config);                              // setup motor controller
+        
+              #ifdef STSPIN220
+                  MtrCtrl_init_220(step_config);                              // setup motor controller
+              #else
+                  MtrCtrl_init_820(step_config);                              // setup motor controller
+              #endif
           
           if (motor_dir == 1){digitalWrite(DIR,FORWARD); }         // rewrite DIR pin for direction
           else{digitalWrite(DIR,REVERSE);}
@@ -1028,6 +1136,7 @@ void validDur_Start(float Q,float Vol, float Time){
         min_user = 0;
         sec_user = 0;
         motor_dir = 0;
+        step_config = 0;
         
         estop_user = false;
         dp_checkpoint = false;               
@@ -1326,8 +1435,8 @@ void recvEvent(int numBytes){
       Wire.write(error_code);
                                          // TX error
       #ifdef TESTING
-        Serial.print("Error code :");
-        Serial.println(error_code, HEX);
+        Serial.print("Error code : ");
+        Serial.println(error_code, DEC);
       #endif
 
       error_code = NO_ERR;
