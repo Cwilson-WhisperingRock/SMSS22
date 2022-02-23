@@ -87,7 +87,7 @@ def main():
     # Working Variables that pass through main and GUI
     global rollcall, poll_user, q_user, radius_user, cap_user
     global hour_user, min_user, sec_user, dir_user, back_flag
-    global estop_flag, ard_duration, reqGUI
+    global estop_flag, ard_duration, reqGUI, user_code
     
     # I2C Addresses
     PI_ADD = 0x01                       
@@ -392,6 +392,8 @@ def main():
 #           that aids the user in correcting their data 
 #           requests
 def Error_2Str(error):
+
+    global LARGE_ERR, SMALL_ERR, DUR_ERR, LD_ERR, SD_ERR, DICT_ERR, NO_ERR
     
     if error == LARGE_ERR:
         return "Error: Flow rate too large for hardware"
@@ -472,7 +474,7 @@ def curs(stdscr):
     global reqGUI
     global rollcall, poll_user, q_user, radius_user, cap_user
     global hour_user, min_user, sec_user, dir_user
-    global estop_index
+    global estop_index, user_code
     
 
     # Color combinations (ID, foreground, background)
