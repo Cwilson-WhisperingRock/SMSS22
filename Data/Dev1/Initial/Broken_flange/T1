@@ -1,0 +1,30 @@
+Hardware
+
+Syringe : S1
+Motor : M1
+Arduino Nano : A1
+Flange retainer : red one by conrad
+Plunger Holder : purple by Conrad
+Motor Supply : New - 24V
+Fluid : Tap water
+
+
+LabSmith
+
+(L) Pipe Length from atm to pressure : 0.082 m
+(D) Pipe Diameter
+Dynamic Fluid Viscosity (mu) H2O : 0.000975 @ 70 F
+Sensor : uPOS250-T116
+Tube : 45 deg
+
+
+Hub
+
+mode : jog
+Q : 16000 nL/s
+syringe_rad : 11 mm
+
+
+Notes:
+    The flange retainer is breaking. This used to max out at 90 kPa but it only reaches 70 kPa because the retainer is breaking at the screws...
+    Need to go home and 3D print a bunch of thicker stuff.

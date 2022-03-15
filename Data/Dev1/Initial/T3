@@ -1,0 +1,33 @@
+Hardware
+
+Syringe : S1
+Motor : M1
+Arduino Nano : A1
+Flange retainer : Big blue
+Plunger Holder : purple by Conrad
+Motor Supply : New - 24V
+Fluid : Tap water
+Motor Freq : 83.82 Hz
+
+
+LabSmith
+
+(L) Pipe Length from atm to pressure : 0.082 m
+(D) Pipe Diameter
+Dynamic Fluid Viscosity (mu) H2O : 0.000975 @ 70 F
+Sensor : uPOS250-T116
+Tube : 45 deg
+
+
+Hub
+
+mode : jog
+Q : 10 nL/s
+syringe_rad : 11 mm
+
+
+Notes:
+    Set min freq to 1 Hz
+    Had initial pressure build up in the beginning.
+    Single motor running
+    
